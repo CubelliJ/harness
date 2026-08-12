@@ -7,7 +7,8 @@ from harness.tools import TOOL_REGISTRY
 
 SYSTEM_PROMPT = """
 You are a coding assistant with local file tools for this Python repo.
-Use tools to inspect and edit files. Prefer harness/*.py and README.md.
+Use tools to inspect, edit, and test files. After meaningful edits, use run_command
+when appropriate to run focused tests or validation. Prefer harness/*.py and README.md.
 Do not claim tools are unavailable — call them.
 Be brief on the answers.
 """.strip()
@@ -28,6 +29,21 @@ OPENAI_TOOLS: List[Dict[str, Any]] = [
                     }
                 },
                 "required": ["filename"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_command",
+            "description": "Run a shell command in the workspace, such as tests or a formatter, and return bounded output.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "Command to run from the workspace root"},
+                    "timeout": {"type": "integer", "description": "Timeout in seconds, maximum 300", "default": 120},
+                },
+                "required": ["command"],
             },
         },
     },
@@ -92,30 +108,42 @@ def get_full_system_prompt() -> str:
 
 
 def execute_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
+    """Execute a tool after validating model-supplied arguments.
+
+    Required fields are checked here rather than relying on ``dict.get``
+    defaults. This keeps malformed calls from turning into filesystem actions.
+    """
     tool = TOOL_REGISTRY.get(tool_name)
     if not tool:
         return {"error": f"Unknown tool: {tool_name}"}
+    if not isinstance(args, dict):
+        return {"error": "Tool arguments must be an object"}
+    required = {
+        "read_file": ("filename",),
+        "run_command": ("command",),
+        "search_files": ("query",),
+        "edit_file": ("path", "old_str", "new_str"),
+    }.get(tool_name, ())
+    missing = [key for key in required if key not in args]
+    if missing:
+        return {"error": f"Missing required argument(s): {', '.join(missing)}"}
     try:
         if tool_name == "read_file":
-            return tool(args.get("filename", "."))
+            return tool(args["filename"])
+        if tool_name == "run_command":
+            return tool(args["command"], args.get("timeout", 120))
         if tool_name == "list_files":
             return tool(args.get("path", "."))
         if tool_name == "search_files":
             return tool(
-                args.get("query", ""),
-                args.get("path", "."),
-                args.get("glob", "*"),
+                args["query"], args.get("path", "."), args.get("glob", "*"),
                 args.get("max_results", 100),
             )
         if tool_name == "edit_file":
             # ``apply`` is an internal execution flag and is intentionally not
             # exposed in the model-facing schema.
-            return tool(
-                args.get("path", "."),
-                args.get("old_str", ""),
-                args.get("new_str", ""),
-                apply=args.get("apply", True),
-            )
+            return tool(args["path"], args["old_str"], args["new_str"],
+                        apply=args.get("apply", True))
     except Exception as e:
         return {"error": f"{type(e).__name__}: {e}"}
     return {"error": "Unhandled tool"}

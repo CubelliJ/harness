@@ -198,6 +198,24 @@ def _colorize_diff(diff: str) -> str:
     return "".join(colored)
 
 
+def _confirm_command(command: str) -> Tuple[bool, str]:
+    """Require an explicit human approval before running a shell command."""
+    print("\n\033[33mProposed command:\033[0m %s" % command)
+    try:
+        answer = input("Run this command? [y/N] ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False, ""
+    if answer in {"y", "yes"}:
+        return True, ""
+    try:
+        feedback = input("Feedback (optional): ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        feedback = ""
+    return False, feedback
+
+
 def _confirm_edit(result: Dict[str, Any]) -> Tuple[bool, str]:
     """Display a proposed diff and collect feedback when an edit is rejected."""
     print("\n\033[33mProposed edit: %s\033[0m" % result.get("path", ""))
@@ -244,26 +262,47 @@ def run(initial_request: str = "") -> None:
             conversation.append(assistant_message(content or None, tool_calls=tool_calls))
             save_conversation_history(history_path, conversation)
             for tc in tool_calls:
-                call_id, name, args = parse_tool_call(tc)
-                if name == "edit_file":
-                    preview_args = dict(args, apply=False)
-                    result = execute_tool(name, preview_args)
-                    if not result.get("error") and result.get("action") != "old_str not found":
-                        if config.dry_run():
-                            result["action"] = "dry_run"
-                        elif session_auto_approve:
-                            result = execute_tool(name, dict(args, apply=True))
+                # A malformed model response must become a tool error, not a
+                # filesystem operation or a crashed session. Preserve the call
+                # id when possible so the provider can continue the exchange.
+                try:
+                    call_id, name, args = parse_tool_call(tc)
+                except ValueError as exc:
+                    call_id = tc.get("id") if isinstance(tc, dict) else ""
+                    call_id = call_id or "invalid-tool-call"
+                    name = ((tc.get("function") or {}).get("name", "invalid")
+                            if isinstance(tc, dict) and isinstance(tc.get("function"), dict)
+                            else "invalid")
+                    args = {}
+                    result = {"error": str(exc)}
+                else:
+                    if name == "run_command":
+                        approved, feedback = _confirm_command(args.get("command", ""))
+                        if approved:
+                            result = execute_tool(name, args)
                         else:
-                            approved, feedback = _confirm_edit(result)
-                            if approved:
+                            result = {"action": "command_rejected"}
+                            if feedback:
+                                result["feedback"] = feedback
+                    elif name == "edit_file":
+                        preview_args = dict(args, apply=False)
+                        result = execute_tool(name, preview_args)
+                        if not result.get("error") and result.get("action") != "old_str not found":
+                            if config.dry_run():
+                                result["action"] = "dry_run"
+                            elif session_auto_approve:
                                 result = execute_tool(name, dict(args, apply=True))
                             else:
-                                result["action"] = "edit_rejected"
-                                result.pop("diff", None)
-                                if feedback:
-                                    result["feedback"] = feedback
-                else:
-                    result = execute_tool(name, args)
+                                approved, feedback = _confirm_edit(result)
+                                if approved:
+                                    result = execute_tool(name, dict(args, apply=True))
+                                else:
+                                    result["action"] = "edit_rejected"
+                                    result.pop("diff", None)
+                                    if feedback:
+                                        result["feedback"] = feedback
+                    else:
+                        result = execute_tool(name, args)
                 summary = (result.get("error") or result.get("action") or
                            result.get("path") or result.get("file_path") or "ok")
                 print(f"\u001b[90m▸ tool {name} → {summary}\u001b[0m")

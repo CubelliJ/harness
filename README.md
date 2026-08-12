@@ -37,9 +37,10 @@ You’ll get a REPL. Type a request, press Enter. Use **Shift+Enter** to insert 
 newline without submitting (in terminals that report modified keys), and press
 Enter to submit. Ctrl+C to exit. Bracketed paste also preserves newlines.
 
-During a session, use `/auto-accept` to approve all subsequent edits without
-prompting. Use `/auto-accept off` to restore edit confirmations. `/quit` exits
-and `/help` lists session commands.
+During a session, use `/auto-accept` to approve all subsequent file edits without
+prompting. Shell commands always require explicit human approval; `/auto-accept`
+does not bypass command confirmations. Use `/auto-accept off` to restore edit
+confirmations. `/quit` exits and `/help` lists session commands.
 
 Session transcripts land in `~/harness_logs/` by default.
 
@@ -52,6 +53,7 @@ The model can call:
 | `read_file` | Read a file |
 | `list_files` | List a directory |
 | `search_files` | Recursively search text files, honoring `.gitignore` |
+| `run_command` | Run a workspace shell command, such as tests or a formatter |
 | `edit_file` | Propose and edit a file (empty `old_str` creates/overwrites) |
 
 Edits are shown as a unified diff and require confirmation by default. If you

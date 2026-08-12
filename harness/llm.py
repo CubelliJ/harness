@@ -137,15 +137,33 @@ def execute_llm_call(
 
 
 def parse_tool_call(tool_call: Dict[str, Any]) -> Tuple[str, str, Dict[str, Any]]:
-    """Return (call_id, name, args_dict) from an OpenAI tool_call object."""
-    call_id = tool_call.get("id") or ""
-    fn = tool_call.get("function") or {}
-    name = fn.get("name") or ""
-    raw_args = fn.get("arguments") or "{}"
-    try:
-        args = json.loads(raw_args)
-        if not isinstance(args, dict):
-            args = {}
-    except json.JSONDecodeError:
-        args = {}
+    """Return a validated ``(call_id, name, args_dict)`` tuple.
+
+    Tool calls come from the model, so malformed payloads must fail closed. In
+    particular, silently turning invalid arguments into ``{}`` can cause a
+    tool's defaults to perform an unintended operation.
+    """
+    if not isinstance(tool_call, dict):
+        raise ValueError("tool call must be an object")
+    call_id = tool_call.get("id")
+    if not isinstance(call_id, str) or not call_id.strip():
+        raise ValueError("tool call is missing a valid id")
+    fn = tool_call.get("function")
+    if not isinstance(fn, dict):
+        raise ValueError("tool call is missing its function")
+    name = fn.get("name")
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("tool call is missing a function name")
+    raw_args = fn.get("arguments", "{}")
+    if isinstance(raw_args, dict):
+        args = raw_args
+    elif isinstance(raw_args, str):
+        try:
+            args = json.loads(raw_args or "{}")
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"tool call has invalid JSON arguments: {exc.msg}") from exc
+    else:
+        raise ValueError("tool call arguments must be a JSON object")
+    if not isinstance(args, dict):
+        raise ValueError("tool call arguments must decode to an object")
     return call_id, name, args

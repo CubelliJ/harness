@@ -80,6 +80,16 @@ class ToolsTestCase(unittest.TestCase):
         self.assertEqual(result["action"], "old_str not found")
         self.assertEqual(path.read_text(encoding="utf-8"), "before")
 
+    def test_run_command_uses_workspace_and_captures_result(self):
+        result = tools.run_command("python -c \"print('ok')\"")
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["returncode"], 0)
+        self.assertIn("ok", result["stdout"])
+
+    def test_run_command_rejects_invalid_timeout(self):
+        result = tools.run_command("echo ok", timeout=0)
+        self.assertIn("error", result)
+
     def test_read_file_returns_content(self):
         (self.workspace / "example.txt").write_text("hello", encoding="utf-8")
         result = tools.read_file("example.txt")

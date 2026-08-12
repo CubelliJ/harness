@@ -12,16 +12,18 @@ class LlmTestCase(unittest.TestCase):
         self.assertEqual((call_id, name, args), ("call-1", "read_file", {"filename": "README.md"}))
 
     def test_parse_tool_call_handles_invalid_arguments(self):
-        self.assertEqual(
-            parse_tool_call({"id": "call-1", "function": {"name": "x", "arguments": "not-json"}}),
-            ("call-1", "x", {}),
-        )
+        with self.assertRaisesRegex(ValueError, "invalid JSON arguments"):
+            parse_tool_call({
+                "id": "call-1",
+                "function": {"name": "x", "arguments": "not-json"},
+            })
 
     def test_parse_tool_call_handles_non_object_arguments(self):
-        self.assertEqual(
-            parse_tool_call({"id": "call-1", "function": {"name": "x", "arguments": "[]"}}),
-            ("call-1", "x", {}),
-        )
+        with self.assertRaisesRegex(ValueError, "must decode to an object"):
+            parse_tool_call({
+                "id": "call-1",
+                "function": {"name": "x", "arguments": "[]"},
+            })
 
     def test_is_rate_limited(self):
         self.assertTrue(_is_rate_limited(RuntimeError("OpenRouter error: {'code': 429}")))
