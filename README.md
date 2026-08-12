@@ -71,6 +71,60 @@ python -m harness --dry-run
 
 Relative paths resolve under the current working directory (or `HARNESS_WORKSPACE` if set).
 
+## Evaluation workflow
+
+Both the Harness CLI and `eval_chat.py` load `.env` from this repository root, even
+when `HARNESS_WORKSPACE` points at an evaluation scenario. Shell environment
+variables still take precedence over `.env`.
+
+Create the scenario workspaces and manifest:
+
+```bash
+python make_eval_scenarios.py
+```
+
+Run an agent on one scenario without any interactive input. `--scenario` loads
+its task from the manifest and the command exits after the agent finishes:
+
+```bash
+HARNESS_WORKSPACE="$PWD/eval_scenarios/word_count" \\
+HARNESS_HISTORY_FILE="$PWD/eval_scenarios/word_count/history.txt" \\
+python -m harness --yes --scenario word_count
+```
+
+The equivalent explicit form is:
+
+```bash
+python -m harness --yes --request "Modify word_count.py so it accepts a filename as its first command-line argument and prints the number of words in that file. Keep the existing default text behavior when no argument is supplied. Do not modify tests."
+```
+
+Evaluate all available scenario transcripts at once:
+
+```bash
+python eval_chat.py
+```
+
+The evaluator finds each scenario's `history.txt` and task from the manifest.
+To evaluate only one scenario, use:
+
+```bash
+python eval_chat.py --scenario word_count
+```
+
+Use `--yes` for unattended runs (or omit it to review edits). The evaluator
+uses `EVAL_API_KEY`, or falls back to
+`OPENROUTER_API_KEY` from `.env`; `EVAL_MODEL` and `EVAL_URL` are also supported.
+The complete unattended flow is:
+
+```bash
+python make_eval_scenarios.py
+python -m harness --yes --scenario word_count
+python eval_chat.py eval_scenarios/word_count/history.txt --scenario word_count
+```
+
+Keep the two `HARNESS_*` assignments on the same command (or export them); a
+standalone assignment affects only that one shell command and does not persist.
+
 ## Tests
 
 Run the unit test suite with the Python standard library:

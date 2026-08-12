@@ -6,6 +6,8 @@ import os
 import sys
 import termios
 import tty
+import json
+from pathlib import Path
 from typing import Any, Dict, Tuple
 
 from harness import config, get_version
@@ -217,66 +219,37 @@ def _confirm_edit(result: Dict[str, Any]) -> Tuple[bool, str]:
     return False, feedback
 
 
-def run() -> None:
+def run(initial_request: str = "") -> None:
+    """Run the REPL, or process one request when initial_request is supplied."""
     _banner()
     session_auto_approve = config.auto_approve()
     history_path = history_file_path()
     conversation = [system_message(get_full_system_prompt())]
     save_conversation_history(history_path, conversation)
 
-    while True:
-        try:
-            user_input = _read_input(YOU_PROMPT)
-        except (KeyboardInterrupt, EOFError):
-            break
-
-        command = user_input.strip().lower()
-        if command in {"/quit", "/exit"}:
-            break
-        if command in {"/auto-accept", "/auto-approve"}:
-            session_auto_approve = True
-            print("\033[90m▸ auto-accept enabled for this session\033[0m")
-            continue
-        if command in {"/auto-accept off", "/auto-approve off"}:
-            session_auto_approve = False
-            print("\033[90m▸ auto-accept disabled for this session\033[0m")
-            continue
-        if command in {"/help", "?"}:
-            print("Commands: /auto-accept, /auto-accept off, /quit")
-            continue
-        if not user_input.strip():
-            continue
-
+    def process(user_input: str) -> None:
+        nonlocal session_auto_approve
         conversation.append(user_message(user_input))
         save_conversation_history(history_path, conversation)
-
-        try:
-            while True:
-                content, tool_calls = execute_llm_call(conversation)
-
-                if not tool_calls:
-                    conversation.append(assistant_message(content))
-                    save_conversation_history(history_path, conversation)
-                    if content:
-                        print(f"{ASSISTANT_PREFIX}{render_markdown(content)}")
-                    break
-
+        while True:
+            content, tool_calls = execute_llm_call(conversation)
+            if not tool_calls:
+                conversation.append(assistant_message(content))
+                save_conversation_history(history_path, conversation)
                 if content:
                     print(f"{ASSISTANT_PREFIX}{render_markdown(content)}")
-
-                conversation.append(assistant_message(content or None, tool_calls=tool_calls))
-                save_conversation_history(history_path, conversation)
-
-                for tc in tool_calls:
-                    call_id, name, args = parse_tool_call(tc)
-                    if name == "edit_file":
-                        # Preview first, then apply only after explicit approval.
-                        preview_args = dict(args)
-                        preview_args["apply"] = False
-                        result = execute_tool(name, preview_args)
-                        if result.get("error") or result.get("action") == "old_str not found":
-                            pass
-                        elif config.dry_run():
+                return
+            if content:
+                print(f"{ASSISTANT_PREFIX}{render_markdown(content)}")
+            conversation.append(assistant_message(content or None, tool_calls=tool_calls))
+            save_conversation_history(history_path, conversation)
+            for tc in tool_calls:
+                call_id, name, args = parse_tool_call(tc)
+                if name == "edit_file":
+                    preview_args = dict(args, apply=False)
+                    result = execute_tool(name, preview_args)
+                    if not result.get("error") and result.get("action") != "old_str not found":
+                        if config.dry_run():
                             result["action"] = "dry_run"
                         elif session_auto_approve:
                             result = execute_tool(name, dict(args, apply=True))
@@ -289,36 +262,84 @@ def run() -> None:
                                 result.pop("diff", None)
                                 if feedback:
                                     result["feedback"] = feedback
-                    else:
-                        result = execute_tool(name, args)
-                    summary = (
-                        result.get("error")
-                        or result.get("action")
-                        or result.get("path")
-                        or result.get("file_path")
-                        or "ok"
-                    )
-                    print(f"\u001b[90m▸ tool {name} → {summary}\u001b[0m")
-                    conversation.append(
-                        tool_message(call_id, format_tool_result_content(name, result))
-                    )
-                save_conversation_history(history_path, conversation)
+                else:
+                    result = execute_tool(name, args)
+                summary = (result.get("error") or result.get("action") or
+                           result.get("path") or result.get("file_path") or "ok")
+                print(f"\u001b[90m▸ tool {name} → {summary}\u001b[0m")
+                conversation.append(tool_message(call_id, format_tool_result_content(name, result)))
+            save_conversation_history(history_path, conversation)
+
+    if initial_request:
+        try:
+            process(initial_request)
         except RuntimeError as e:
             print(f"\033[91m▸ error: {e}\033[0m")
+        return
+
+    while True:
+        try:
+            user_input = _read_input(YOU_PROMPT)
+        except (KeyboardInterrupt, EOFError):
+            return
+        command = user_input.strip().lower()
+        if command in {"/quit", "/exit"}:
+            return
+        if command in {"/auto-accept", "/auto-approve"}:
+            session_auto_approve = True
+            print("\033[90m▸ auto-accept enabled for this session\033[0m")
             continue
+        if command in {"/auto-accept off", "/auto-approve off"}:
+            session_auto_approve = False
+            print("\033[90m▸ auto-accept disabled for this session\033[0m")
+            continue
+        if command in {"/help", "?"}:
+            print("Commands: /auto-accept, /auto-accept off, /quit")
+            continue
+        if user_input.strip():
+            try:
+                process(user_input)
+            except RuntimeError as e:
+                print(f"\033[91m▸ error: {e}\033[0m")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="CLI coding agent")
     parser.add_argument("--yes", action="store_true", help="approve all file edits")
     parser.add_argument("--dry-run", action="store_true", help="show edits without applying them")
+    parser.add_argument(
+        "--request", "-r", default="",
+        help="run one request non-interactively, then exit",
+    )
+    parser.add_argument("--scenario", help="load the request from eval_scenarios/manifest.json")
+    parser.add_argument(
+        "--manifest", default=str(Path(__file__).resolve().parent.parent / "eval_scenarios" / "manifest.json"),
+        help=argparse.SUPPRESS,
+    )
     args = parser.parse_args()
+    if args.scenario and not args.request:
+        try:
+            manifest = json.loads(Path(args.manifest).read_text(encoding="utf-8"))
+            scenario = manifest[args.scenario]
+            args.request = scenario["task"]
+            # A scenario is self-contained: use its workspace/history unless
+            # the caller explicitly supplied either environment variable.
+            os.environ.setdefault("HARNESS_WORKSPACE", scenario["workspace"])
+            os.environ.setdefault(
+                "HARNESS_HISTORY_FILE",
+                str(Path(scenario["workspace"]) / "history.txt"),
+            )
+        except (OSError, json.JSONDecodeError, KeyError) as exc:
+            parser.error(f"could not load scenario {args.scenario!r}: {exc}")
     if args.yes:
         os.environ["HARNESS_AUTO_APPROVE"] = "1"
     if args.dry_run:
         os.environ["HARNESS_DRY_RUN"] = "1"
     config.init()
-    run()
+    request = args.request
+    if not request and not sys.stdin.isatty():
+        request = sys.stdin.read().strip()
+    run(request)
 
 
 if __name__ == "__main__":

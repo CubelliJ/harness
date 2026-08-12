@@ -13,20 +13,24 @@ REQUEST_TIMEOUT_S = 600
 
 
 def _try_load_dotenv() -> None:
-    path = Path.cwd() / ".env"
-    if not path.is_file():
-        return
-    try:
-        for raw in path.read_text(encoding="utf-8").splitlines():
-            line = raw.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, val = line.partition("=")
-            key, val = key.strip(), val.strip().strip('"').strip("'")
-            if key and key not in os.environ:
-                os.environ[key] = val
-    except OSError:
-        pass
+    """Load the repository .env, while allowing an explicit cwd .env too."""
+    # Resolve from the installed/source package rather than cwd: HARNESS_WORKSPACE
+    # is commonly a scenario directory, but credentials live at repository root.
+    candidates = [Path(__file__).resolve().parent.parent / ".env", Path.cwd() / ".env"]
+    for path in candidates:
+        if not path.is_file():
+            continue
+        try:
+            for raw in path.read_text(encoding="utf-8").splitlines():
+                line = raw.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, val = line.partition("=")
+                key, val = key.strip(), val.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = val
+        except OSError:
+            pass
 
 
 def workspace_root() -> Path:
