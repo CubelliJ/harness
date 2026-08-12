@@ -6,7 +6,7 @@ import os
 import sys
 import termios
 import tty
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 from harness import config, get_version
 from harness.config import history_file_path
@@ -196,8 +196,8 @@ def _colorize_diff(diff: str) -> str:
     return "".join(colored)
 
 
-def _confirm_edit(result: Dict[str, Any]) -> bool:
-    """Display a proposed diff and ask before applying it."""
+def _confirm_edit(result: Dict[str, Any]) -> Tuple[bool, str]:
+    """Display a proposed diff and collect feedback when an edit is rejected."""
     print("\n\033[33mProposed edit: %s\033[0m" % result.get("path", ""))
     if result.get("diff"):
         diff = _colorize_diff(result["diff"])
@@ -206,8 +206,15 @@ def _confirm_edit(result: Dict[str, Any]) -> bool:
         answer = input("Apply this edit? [y/N] ").strip().lower()
     except (EOFError, KeyboardInterrupt):
         print()
-        return False
-    return answer in {"y", "yes"}
+        return False, ""
+    if answer in {"y", "yes"}:
+        return True, ""
+    try:
+        feedback = input("Feedback (optional): ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        feedback = ""
+    return False, feedback
 
 
 def run() -> None:
@@ -271,11 +278,17 @@ def run() -> None:
                             pass
                         elif config.dry_run():
                             result["action"] = "dry_run"
-                        elif session_auto_approve or _confirm_edit(result):
+                        elif session_auto_approve:
                             result = execute_tool(name, dict(args, apply=True))
                         else:
-                            result["action"] = "edit_rejected"
-                            result.pop("diff", None)
+                            approved, feedback = _confirm_edit(result)
+                            if approved:
+                                result = execute_tool(name, dict(args, apply=True))
+                            else:
+                                result["action"] = "edit_rejected"
+                                result.pop("diff", None)
+                                if feedback:
+                                    result["feedback"] = feedback
                     else:
                         result = execute_tool(name, args)
                     summary = (

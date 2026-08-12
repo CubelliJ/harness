@@ -1,6 +1,8 @@
 """Barebones file tools: read, list, edit."""
 
 import difflib
+import fnmatch
+import hashlib
 import os
 import stat
 import tempfile
@@ -62,6 +64,89 @@ def list_files(path: str = ".") -> Dict[str, Any]:
     }
 
 
+def _load_gitignore(root: Path) -> list[str]:
+    """Load simple gitignore patterns from the workspace root."""
+    gitignore = root / ".gitignore"
+    if not gitignore.is_file():
+        return []
+    try:
+        return [
+            line.strip() for line in gitignore.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+    except (OSError, UnicodeDecodeError):
+        return []
+
+
+def _gitignored(relative_path: Path, patterns: list[str]) -> bool:
+    """Apply the common .gitignore cases without requiring Git."""
+    path = relative_path.as_posix()
+    ignored = False
+    for pattern in patterns:
+        negated = pattern.startswith("!")
+        pattern = pattern[1:] if negated else pattern
+        directory_pattern = pattern.endswith("/")
+        pattern = pattern.rstrip("/")
+        if not pattern:
+            continue
+        if pattern.startswith("/"):
+            matched = fnmatch.fnmatch(path, pattern[1:])
+        elif "/" in pattern:
+            matched = fnmatch.fnmatch(path, pattern)
+        else:
+            matched = any(fnmatch.fnmatch(part, pattern) for part in relative_path.parts)
+        if matched and (directory_pattern or not relative_path.is_dir()):
+            ignored = not negated
+    return ignored
+
+
+def search_files(
+    query: str,
+    path: str = ".",
+    glob: str = "*",
+    max_results: int = 100,
+) -> Dict[str, Any]:
+    """Recursively search text files, honoring the workspace .gitignore."""
+    if not query:
+        return {"error": "Search query cannot be empty"}
+    if max_results < 1:
+        return {"error": "max_results must be at least 1"}
+    try:
+        root = resolve_abs_path(path)
+        workspace = workspace_root().resolve()
+    except ValueError as e:
+        return {"error": str(e)}
+    if not root.is_dir():
+        return {"error": f"Directory not found: {root}"}
+
+    patterns = _load_gitignore(workspace)
+    matches = []
+    for candidate in sorted(root.rglob("*")):
+        if not candidate.is_file() or not fnmatch.fnmatch(candidate.name, glob):
+            continue
+        relative = candidate.relative_to(workspace)
+        if any(part in {".git", ".hg", ".svn", "__pycache__", ".venv", "venv", "node_modules"}
+               for part in relative.parts):
+            continue
+        if _gitignored(relative, patterns):
+            continue
+        try:
+            # Avoid blocking the agent on large or binary files.
+            if candidate.stat().st_size > 2 * 1024 * 1024:
+                continue
+            with candidate.open("r", encoding="utf-8") as stream:
+                for line_number, line in enumerate(stream, 1):
+                    if query.casefold() not in line.casefold():
+                        continue
+                    matches.append({"file": relative.as_posix(), "line": line_number,
+                                    "text": line.rstrip("\n\r")})
+                    if len(matches) >= max_results:
+                        return {"query": query, "matches": matches, "truncated": True}
+        except (OSError, UnicodeDecodeError):
+            continue
+    return {"query": query, "matches": matches, "truncated": False}
+
+
 def edit_preview(path: str, old_str: str, new_str: str) -> Dict[str, Any]:
     """Validate an edit and return its proposed contents and unified diff."""
     try:
@@ -108,8 +193,19 @@ def edit_file(path: str, old_str: str, new_str: str, *, apply: bool = True) -> D
 
     full_path = Path(preview["path"])
     if full_path.exists():
+        # Keep recovery copies completely outside the repository. Git remains
+        # the durable/versioned history; these are local safety snapshots only.
+        root = workspace_root().expanduser().resolve()
+        relative = full_path.relative_to(root)
+        backup_root = Path(os.environ.get(
+            "HARNESS_BACKUP_DIR", "~/.harness/backups"
+        )).expanduser()
+        workspace_id = hashlib.sha256(str(root).encode("utf-8")).hexdigest()[:16]
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        backup = full_path.with_name(full_path.name + f".harness.bak.{stamp}")
+        backup = backup_root / workspace_id / relative.parent / (
+            relative.name + f".harness.bak.{stamp}"
+        )
+        backup.parent.mkdir(parents=True, exist_ok=True)
         backup.write_text(preview["original"], encoding="utf-8")
         try:
             os.chmod(backup, stat.S_IRUSR | stat.S_IWUSR)
@@ -135,6 +231,7 @@ def edit_file(path: str, old_str: str, new_str: str, *, apply: bool = True) -> D
 ALL_TOOLS = [
     ("read_file", read_file),
     ("list_files", list_files),
+    ("search_files", search_files),
     ("edit_file", edit_file),
 ]
 

@@ -11,11 +11,17 @@ class ToolsTestCase(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.workspace = Path(self.temp_dir.name)
+        self.backup_dir = self.workspace / "backups"
+        self.env_patcher = patch.dict(
+            os.environ, {"HARNESS_BACKUP_DIR": str(self.backup_dir)}
+        )
+        self.env_patcher.start()
         self.patcher = patch("harness.tools.workspace_root", return_value=self.workspace)
         self.patcher.start()
 
     def tearDown(self):
         self.patcher.stop()
+        self.env_patcher.stop()
         self.temp_dir.cleanup()
 
     def test_resolve_abs_path_rejects_traversal(self):
@@ -78,6 +84,24 @@ class ToolsTestCase(unittest.TestCase):
         (self.workspace / "example.txt").write_text("hello", encoding="utf-8")
         result = tools.read_file("example.txt")
         self.assertEqual(result["content"], "hello")
+
+    def test_search_files_honors_gitignore_and_limits_results(self):
+        (self.workspace / ".gitignore").write_text("ignored.txt\nignored_dir/\n", encoding="utf-8")
+        (self.workspace / "keep.py").write_text("needle\nneedle\n", encoding="utf-8")
+        (self.workspace / "ignored.txt").write_text("needle\n", encoding="utf-8")
+        ignored_dir = self.workspace / "ignored_dir"
+        ignored_dir.mkdir()
+        (ignored_dir / "file.py").write_text("needle\n", encoding="utf-8")
+
+        result = tools.search_files("NEEDLE", glob="*.py", max_results=1)
+
+        self.assertEqual(len(result["matches"]), 1)
+        self.assertTrue(result["truncated"])
+        self.assertEqual(result["matches"][0]["file"], "keep.py")
+
+    def test_search_files_rejects_workspace_escape(self):
+        result = tools.search_files("needle", "../")
+        self.assertIn("error", result)
 
 
 if __name__ == "__main__":

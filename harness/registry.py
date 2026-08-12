@@ -51,6 +51,23 @@ OPENAI_TOOLS: List[Dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "search_files",
+            "description": "Recursively search text files under the workspace, honoring .gitignore.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Case-insensitive text to find"},
+                    "path": {"type": "string", "description": "Directory relative to the workspace", "default": "."},
+                    "glob": {"type": "string", "description": "Filename pattern, such as *.py", "default": "*"},
+                    "max_results": {"type": "integer", "description": "Maximum matches to return", "default": 100},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "edit_file",
             "description": (
                 "Replace the first occurrence of old_str with new_str. "
@@ -83,6 +100,13 @@ def execute_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
             return tool(args.get("filename", "."))
         if tool_name == "list_files":
             return tool(args.get("path", "."))
+        if tool_name == "search_files":
+            return tool(
+                args.get("query", ""),
+                args.get("path", "."),
+                args.get("glob", "*"),
+                args.get("max_results", 100),
+            )
         if tool_name == "edit_file":
             # ``apply`` is an internal execution flag and is intentionally not
             # exposed in the model-facing schema.

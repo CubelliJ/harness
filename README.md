@@ -2,6 +2,10 @@
 
 CLI coding agent. Talks to OpenRouter (`openai/gpt-5.6-luna` by default) via native function calling, and can read, list, and edit files in your workspace.
 
+## Inspiration
+
+This repository was inspired by [The Emperor Has No Clothes](https://www.mihaileric.com/The-Emperor-Has-No-Clothes/), a write-up about a Claude Code leak that occurred in April.
+
 ## Requirements
 
 - Python 3.9+
@@ -47,10 +51,16 @@ The model can call:
 |------|---------|
 | `read_file` | Read a file |
 | `list_files` | List a directory |
+| `search_files` | Recursively search text files, honoring `.gitignore` |
 | `edit_file` | Propose and edit a file (empty `old_str` creates/overwrites) |
 
-Edits are shown as a unified diff and require confirmation by default. Existing
-files are backed up to `<filename>.harness.bak` before replacement. Use
+Edits are shown as a unified diff and require confirmation by default. If you
+reject an edit, you can provide feedback and the model will receive it. Existing
+files are backed up outside the repository, under `~/.harness/backups/` by
+ default (or `HARNESS_BACKUP_DIR`). Each workspace gets its own folder and
+ backups retain the original relative path. Git remains the durable,
+ shareable history; use `git restore` or `git revert` to pull changes back to a
+ point. Use
 `--yes` (or `HARNESS_AUTO_APPROVE=1`) to approve edits automatically, or
 `--dry-run` (or `HARNESS_DRY_RUN=1`) to preview edits without changing files.
 
