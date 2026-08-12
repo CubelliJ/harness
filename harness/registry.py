@@ -1,88 +1,109 @@
-"""Tool registry, prompt, and invocation parsing."""
+"""Tool schemas, execution, and result formatting."""
 
-import inspect
 import json
-import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
-from harness.tools import ALL_TOOLS, TOOL_REGISTRY
+from harness.tools import TOOL_REGISTRY
 
 SYSTEM_PROMPT = """
-You are a coding assistant. Tools:
-
-{tool_list}
-
-When you need a tool, reply with exactly one line:
-tool: TOOL_NAME({{JSON_ARGS}})
-JSON_ARGS must be valid JSON with double-quoted keys.
-After a tool_result, continue the task. Otherwise reply normally.
+You are a coding assistant with local file tools for this Python repo.
+Use tools to inspect and edit files. Prefer harness/*.py and README.md.
+Do not claim tools are unavailable — call them.
 """.strip()
 
-_UNQUOTED_JSON_KEY_RE = re.compile(r"([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)")
+# OpenAI/OpenRouter function-calling schemas
+OPENAI_TOOLS: List[Dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": "Read a file and return its full content.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filename": {
+                        "type": "string",
+                        "description": "Path to the file relative to the workspace",
+                    }
+                },
+                "required": ["filename"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_files",
+            "description": "List files and directories at a path.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Directory path relative to the workspace",
+                        "default": ".",
+                    }
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "edit_file",
+            "description": (
+                "Replace the first occurrence of old_str with new_str. "
+                "Empty old_str creates or overwrites the file."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "File path"},
+                    "old_str": {"type": "string", "description": "Text to replace"},
+                    "new_str": {"type": "string", "description": "Replacement text"},
+                },
+                "required": ["path", "old_str", "new_str"],
+            },
+        },
+    },
+]
 
 
 def get_full_system_prompt() -> str:
-    parts = []
-    for name, func in ALL_TOOLS:
-        parts.append(
-            f"TOOL\n===\nName: {name}\nDescription: {func.__doc__}\n"
-            f"Signature: {inspect.signature(func)}\n{'=' * 15}"
-        )
-    return SYSTEM_PROMPT.format(tool_list="\n\n".join(parts))
-
-
-def _parse_args(json_str: str) -> Optional[Dict[str, Any]]:
-    try:
-        obj = json.loads(json_str)
-        return obj if isinstance(obj, dict) else None
-    except json.JSONDecodeError:
-        fixed = _UNQUOTED_JSON_KEY_RE.sub(r'\1"\2"\3', json_str)
-        try:
-            obj = json.loads(fixed)
-            return obj if isinstance(obj, dict) else None
-        except json.JSONDecodeError:
-            return None
-
-
-def extract_tool_invocations(text: str) -> List[Tuple[str, Dict[str, Any]]]:
-    invocations = []
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line.startswith("tool:"):
-            continue
-        try:
-            after = line[len("tool:") :].strip()
-            name, rest = after.split("(", 1)
-            name, rest = name.strip(), rest.rstrip()
-            if not rest.endswith(")"):
-                continue
-            args = _parse_args(rest[:-1].strip())
-            if args is not None:
-                invocations.append((name, args))
-        except Exception:
-            continue
-    return invocations
+    return SYSTEM_PROMPT
 
 
 def execute_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
     tool = TOOL_REGISTRY.get(tool_name)
     if not tool:
         return {"error": f"Unknown tool: {tool_name}"}
-    if tool_name == "read_file":
-        return tool(args.get("filename", "."))
-    if tool_name == "list_files":
-        return tool(args.get("path", "."))
-    if tool_name == "edit_file":
-        return tool(args.get("path", "."), args.get("old_str", ""), args.get("new_str", ""))
+    try:
+        if tool_name == "read_file":
+            return tool(args.get("filename", "."))
+        if tool_name == "list_files":
+            return tool(args.get("path", "."))
+        if tool_name == "edit_file":
+            return tool(args.get("path", "."), args.get("old_str", ""), args.get("new_str", ""))
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
     return {"error": "Unhandled tool"}
 
 
-def format_tool_user_message(tool_name: str, result: Dict[str, Any]) -> str:
+def format_tool_result_content(tool_name: str, result: Dict[str, Any]) -> str:
+    """Plain text/JSON content for a role=tool message."""
+    if result.get("error"):
+        return json.dumps({"error": result["error"]}, ensure_ascii=False)
     if tool_name == "read_file":
         return (
-            f"tool_result(read_file) file_path={result.get('file_path', '')}\n"
+            f"file_path={result.get('file_path', '')}\n"
             "---- FILE START ----\n"
             f"{result.get('content', '')}\n"
-            "---- FILE END ----\n"
+            "---- FILE END ----"
         )
-    return f"tool_result({json.dumps(result, ensure_ascii=False)})"
+    if tool_name == "list_files":
+        files = result.get("files") or []
+        listing = "\n".join(
+            f"- {item.get('filename')} ({item.get('type')})" for item in files
+        )
+        return f"path={result.get('path', '')}\n{listing}"
+    return json.dumps(result, ensure_ascii=False)

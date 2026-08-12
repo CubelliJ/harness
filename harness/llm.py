@@ -1,4 +1,4 @@
-"""OpenRouter chat client."""
+"""OpenRouter chat client with native tool calling."""
 
 import json
 import logging
@@ -6,9 +6,10 @@ import os
 import time
 import urllib.error
 import urllib.request
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 from harness.config import OPENROUTER_CHAT_URL, REQUEST_TIMEOUT_S, get_model
+from harness.registry import OPENAI_TOOLS
 
 logger = logging.getLogger(__name__)
 
@@ -27,56 +28,94 @@ def _headers() -> Dict[str, str]:
     }
 
 
-def _consume_sse(response: Any, on_delta: Callable[[str], None]) -> str:
-    parts: List[str] = []
-    while True:
-        line = response.readline()
-        if not line:
-            break
-        if line.startswith(b":"):
+def _api_messages(conversation: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Pass through OpenAI-compatible message fields needed for tool calling."""
+    out: List[Dict[str, Any]] = []
+    for msg in conversation:
+        role = msg.get("role", "user")
+        if role == "tool":
+            out.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": msg.get("tool_call_id", ""),
+                    "content": msg.get("content") or "",
+                }
+            )
             continue
-        s = line.strip()
-        if not s or not s.startswith(b"data:"):
-            continue
-        payload = s[len(b"data:") :].strip()
-        if payload == b"[DONE]":
-            break
-        try:
-            obj = json.loads(payload.decode("utf-8"))
-        except json.JSONDecodeError:
-            continue
-        if obj.get("error"):
-            raise RuntimeError(f"OpenRouter error: {obj['error']}")
-        for ch in obj.get("choices") or []:
-            piece = (ch.get("delta") or {}).get("content") or ""
-            if piece:
-                parts.append(piece)
-                on_delta(piece)
-    return "".join(parts)
+        item: Dict[str, Any] = {"role": role if role in ("system", "user", "assistant") else "user"}
+        content = msg.get("content")
+        if content is not None:
+            item["content"] = content
+        elif role == "assistant" and msg.get("tool_calls"):
+            item["content"] = None
+        else:
+            item["content"] = ""
+        if role == "assistant" and msg.get("tool_calls"):
+            item["tool_calls"] = msg["tool_calls"]
+        out.append(item)
+    return out
 
 
-def execute_llm_call(conversation: List[Dict[str, str]]) -> Tuple[str, bool]:
-    """Stream a chat completion. Returns (text, already_printed)."""
+def execute_llm_call(
+    conversation: List[Dict[str, Any]],
+) -> Tuple[str, List[Dict[str, Any]]]:
+    """
+    Non-streaming chat completion with native tools.
+
+    Returns (assistant_text, tool_calls). tool_calls is empty when the model
+    is done talking; otherwise each entry is an OpenAI tool_call object.
+    """
     model = get_model()
-    messages = [
-        {"role": m["role"] if m["role"] in ("system", "user", "assistant") else "user",
-         "content": m["content"]}
-        for m in conversation
-    ]
-    payload = json.dumps({"model": model, "messages": messages, "stream": True}).encode()
+    payload = json.dumps(
+        {
+            "model": model,
+            "messages": _api_messages(conversation),
+            "tools": OPENAI_TOOLS,
+            "tool_choice": "auto",
+            "stream": False,
+        }
+    ).encode()
     request = urllib.request.Request(
         OPENROUTER_CHAT_URL, data=payload, method="POST", headers=_headers()
     )
     t0 = time.perf_counter()
-    printed = False
     try:
         with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_S) as response:
-            print(ASSISTANT_PREFIX, end="", flush=True)
-            printed = True
-            text = _consume_sse(response, lambda d: print(d, end="", flush=True))
-            print()
+            body = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", errors="replace")
         raise RuntimeError(f"OpenRouter HTTP {e.code}: {detail}") from e
-    logger.debug("OpenRouter OK in %.2fs chars=%d", time.perf_counter() - t0, len(text))
-    return text, printed
+
+    if body.get("error"):
+        raise RuntimeError(f"OpenRouter error: {body['error']}")
+
+    choices = body.get("choices") or []
+    if not choices:
+        raise RuntimeError(f"OpenRouter: empty choices: {body!r}")
+
+    message = choices[0].get("message") or {}
+    content = message.get("content") or ""
+    tool_calls = message.get("tool_calls") or []
+
+    logger.debug(
+        "OpenRouter OK in %.2fs chars=%d tool_calls=%d",
+        time.perf_counter() - t0,
+        len(content),
+        len(tool_calls),
+    )
+    return content, tool_calls
+
+
+def parse_tool_call(tool_call: Dict[str, Any]) -> Tuple[str, str, Dict[str, Any]]:
+    """Return (call_id, name, args_dict) from an OpenAI tool_call object."""
+    call_id = tool_call.get("id") or ""
+    fn = tool_call.get("function") or {}
+    name = fn.get("name") or ""
+    raw_args = fn.get("arguments") or "{}"
+    try:
+        args = json.loads(raw_args)
+        if not isinstance(args, dict):
+            args = {}
+    except json.JSONDecodeError:
+        args = {}
+    return call_id, name, args

@@ -1,6 +1,6 @@
 # Harness
 
-CLI coding agent. Talks to OpenRouter (`openai/gpt-5.6-luna` by default) and can read, list, and edit files in your workspace.
+CLI coding agent. Talks to OpenRouter (`openai/gpt-5.6-luna` by default) via native function calling, and can read, list, and edit files in your workspace.
 
 ## Requirements
 

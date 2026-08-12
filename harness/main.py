@@ -10,13 +10,13 @@ from harness.conversation import (
     assistant_message,
     save_conversation_history,
     system_message,
+    tool_message,
     user_message,
 )
-from harness.llm import execute_llm_call
+from harness.llm import execute_llm_call, parse_tool_call
 from harness.registry import (
     execute_tool,
-    extract_tool_invocations,
-    format_tool_user_message,
+    format_tool_result_content,
     get_full_system_prompt,
 )
 
@@ -48,20 +48,36 @@ def run() -> None:
         save_conversation_history(history_path, conversation)
 
         while True:
-            text, printed = execute_llm_call(conversation)
-            tools = extract_tool_invocations(text)
-            conversation.append(assistant_message(text))
-            save_conversation_history(history_path, conversation)
+            content, tool_calls = execute_llm_call(conversation)
 
-            if not tools:
-                if not printed:
-                    print(f"{ASSISTANT_PREFIX}{text}")
+            if not tool_calls:
+                conversation.append(assistant_message(content))
+                save_conversation_history(history_path, conversation)
+                if content:
+                    print(f"{ASSISTANT_PREFIX}{content}")
                 break
 
-            for name, args in tools:
+            if content:
+                print(f"{ASSISTANT_PREFIX}{content}")
+
+            conversation.append(assistant_message(content or None, tool_calls=tool_calls))
+            save_conversation_history(history_path, conversation)
+
+            for tc in tool_calls:
+                call_id, name, args = parse_tool_call(tc)
                 result = execute_tool(name, args)
-                conversation.append(user_message(format_tool_user_message(name, result)))
-                save_conversation_history(history_path, conversation)
+                summary = (
+                    result.get("error")
+                    or result.get("action")
+                    or result.get("path")
+                    or result.get("file_path")
+                    or "ok"
+                )
+                print(f"\u001b[90m▸ tool {name} → {summary}\u001b[0m")
+                conversation.append(
+                    tool_message(call_id, format_tool_result_content(name, result))
+                )
+            save_conversation_history(history_path, conversation)
 
 
 def main() -> None:
