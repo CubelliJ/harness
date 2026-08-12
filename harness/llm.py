@@ -6,7 +6,7 @@ import os
 import time
 import urllib.error
 import urllib.request
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from harness.config import OPENROUTER_CHAT_URL, REQUEST_TIMEOUT_S, get_model
 from harness.registry import OPENAI_TOOLS
@@ -14,6 +14,17 @@ from harness.registry import OPENAI_TOOLS
 logger = logging.getLogger(__name__)
 
 ASSISTANT_PREFIX = "\u001b[92m▸ Assistant:\u001b[0m "
+MAX_RETRIES = 5
+RETRY_BASE_S = 2.0
+
+
+def _is_rate_limited(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    return "429" in text or "rate-limited" in text or "rate limit" in text
+
+
+def _retry_after_s(attempt: int) -> float:
+    return RETRY_BASE_S * (2 ** attempt)
 
 
 def _headers() -> Dict[str, str]:
@@ -64,6 +75,7 @@ def execute_llm_call(
 
     Returns (assistant_text, tool_calls). tool_calls is empty when the model
     is done talking; otherwise each entry is an OpenAI tool_call object.
+    Retries transient OpenRouter rate limits with exponential backoff.
     """
     model = get_model()
     payload = json.dumps(
@@ -75,35 +87,53 @@ def execute_llm_call(
             "stream": False,
         }
     ).encode()
-    request = urllib.request.Request(
-        OPENROUTER_CHAT_URL, data=payload, method="POST", headers=_headers()
-    )
     t0 = time.perf_counter()
-    try:
-        with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_S) as response:
-            body = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        detail = e.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"OpenRouter HTTP {e.code}: {detail}") from e
+    last_error: Optional[BaseException] = None
 
-    if body.get("error"):
-        raise RuntimeError(f"OpenRouter error: {body['error']}")
+    for attempt in range(MAX_RETRIES):
+        request = urllib.request.Request(
+            OPENROUTER_CHAT_URL, data=payload, method="POST", headers=_headers()
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_S) as response:
+                body = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", errors="replace")
+            last_error = RuntimeError(f"OpenRouter HTTP {e.code}: {detail}")
+            if e.code == 429 and attempt < MAX_RETRIES - 1:
+                wait = _retry_after_s(attempt)
+                print(f"\033[90m▸ rate limited; retrying in {wait:.0f}s…\033[0m")
+                time.sleep(wait)
+                continue
+            raise last_error from e
 
-    choices = body.get("choices") or []
-    if not choices:
-        raise RuntimeError(f"OpenRouter: empty choices: {body!r}")
+        if body.get("error"):
+            last_error = RuntimeError(f"OpenRouter error: {body['error']}")
+            if _is_rate_limited(last_error) and attempt < MAX_RETRIES - 1:
+                wait = _retry_after_s(attempt)
+                print(f"\033[90m▸ rate limited; retrying in {wait:.0f}s…\033[0m")
+                time.sleep(wait)
+                continue
+            raise last_error
 
-    message = choices[0].get("message") or {}
-    content = message.get("content") or ""
-    tool_calls = message.get("tool_calls") or []
+        choices = body.get("choices") or []
+        if not choices:
+            raise RuntimeError(f"OpenRouter: empty choices: {body!r}")
 
-    logger.debug(
-        "OpenRouter OK in %.2fs chars=%d tool_calls=%d",
-        time.perf_counter() - t0,
-        len(content),
-        len(tool_calls),
-    )
-    return content, tool_calls
+        message = choices[0].get("message") or {}
+        content = message.get("content") or ""
+        tool_calls = message.get("tool_calls") or []
+
+        logger.debug(
+            "OpenRouter OK in %.2fs chars=%d tool_calls=%d",
+            time.perf_counter() - t0,
+            len(content),
+            len(tool_calls),
+        )
+        return content, tool_calls
+
+    assert last_error is not None
+    raise last_error
 
 
 def parse_tool_call(tool_call: Dict[str, Any]) -> Tuple[str, str, Dict[str, Any]]:

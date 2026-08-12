@@ -25,6 +25,7 @@ from harness.registry import (
     format_tool_result_content,
     get_full_system_prompt,
 )
+from harness.terminal import render_markdown
 
 logger = logging.getLogger(__name__)
 
@@ -242,52 +243,56 @@ def run() -> None:
         conversation.append(user_message(user_input))
         save_conversation_history(history_path, conversation)
 
-        while True:
-            content, tool_calls = execute_llm_call(conversation)
+        try:
+            while True:
+                content, tool_calls = execute_llm_call(conversation)
 
-            if not tool_calls:
-                conversation.append(assistant_message(content))
-                save_conversation_history(history_path, conversation)
+                if not tool_calls:
+                    conversation.append(assistant_message(content))
+                    save_conversation_history(history_path, conversation)
+                    if content:
+                        print(f"{ASSISTANT_PREFIX}{render_markdown(content)}")
+                    break
+
                 if content:
-                    print(f"{ASSISTANT_PREFIX}{content}")
-                break
+                    print(f"{ASSISTANT_PREFIX}{render_markdown(content)}")
 
-            if content:
-                print(f"{ASSISTANT_PREFIX}{content}")
+                conversation.append(assistant_message(content or None, tool_calls=tool_calls))
+                save_conversation_history(history_path, conversation)
 
-            conversation.append(assistant_message(content or None, tool_calls=tool_calls))
-            save_conversation_history(history_path, conversation)
-
-            for tc in tool_calls:
-                call_id, name, args = parse_tool_call(tc)
-                if name == "edit_file":
-                    # Preview first, then apply only after explicit approval.
-                    preview_args = dict(args)
-                    preview_args["apply"] = False
-                    result = execute_tool(name, preview_args)
-                    if result.get("error") or result.get("action") == "old_str not found":
-                        pass
-                    elif config.dry_run():
-                        result["action"] = "dry_run"
-                    elif session_auto_approve or _confirm_edit(result):
-                        result = execute_tool(name, dict(args, apply=True))
+                for tc in tool_calls:
+                    call_id, name, args = parse_tool_call(tc)
+                    if name == "edit_file":
+                        # Preview first, then apply only after explicit approval.
+                        preview_args = dict(args)
+                        preview_args["apply"] = False
+                        result = execute_tool(name, preview_args)
+                        if result.get("error") or result.get("action") == "old_str not found":
+                            pass
+                        elif config.dry_run():
+                            result["action"] = "dry_run"
+                        elif session_auto_approve or _confirm_edit(result):
+                            result = execute_tool(name, dict(args, apply=True))
+                        else:
+                            result["action"] = "edit_rejected"
+                            result.pop("diff", None)
                     else:
-                        result["action"] = "edit_rejected"
-                        result.pop("diff", None)
-                else:
-                    result = execute_tool(name, args)
-                summary = (
-                    result.get("error")
-                    or result.get("action")
-                    or result.get("path")
-                    or result.get("file_path")
-                    or "ok"
-                )
-                print(f"\u001b[90m▸ tool {name} → {summary}\u001b[0m")
-                conversation.append(
-                    tool_message(call_id, format_tool_result_content(name, result))
-                )
-            save_conversation_history(history_path, conversation)
+                        result = execute_tool(name, args)
+                    summary = (
+                        result.get("error")
+                        or result.get("action")
+                        or result.get("path")
+                        or result.get("file_path")
+                        or "ok"
+                    )
+                    print(f"\u001b[90m▸ tool {name} → {summary}\u001b[0m")
+                    conversation.append(
+                        tool_message(call_id, format_tool_result_content(name, result))
+                    )
+                save_conversation_history(history_path, conversation)
+        except RuntimeError as e:
+            print(f"\033[91m▸ error: {e}\033[0m")
+            continue
 
 
 def main() -> None:

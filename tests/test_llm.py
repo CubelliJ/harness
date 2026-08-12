@@ -1,6 +1,6 @@
 import unittest
 
-from harness.llm import parse_tool_call
+from harness.llm import _is_rate_limited, parse_tool_call
 
 
 class LlmTestCase(unittest.TestCase):
@@ -22,6 +22,11 @@ class LlmTestCase(unittest.TestCase):
             parse_tool_call({"id": "call-1", "function": {"name": "x", "arguments": "[]"}}),
             ("call-1", "x", {}),
         )
+
+    def test_is_rate_limited(self):
+        self.assertTrue(_is_rate_limited(RuntimeError("OpenRouter error: {'code': 429}")))
+        self.assertTrue(_is_rate_limited(RuntimeError("temporarily rate-limited upstream")))
+        self.assertFalse(_is_rate_limited(RuntimeError("OpenRouter HTTP 500: boom")))
 
 
 if __name__ == "__main__":

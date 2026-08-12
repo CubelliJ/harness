@@ -82,3 +82,10 @@ Python versions.
 | `HARNESS_LOGS_DIR` | `~/harness_logs` | Session history directory |
 | `HARNESS_HISTORY_FILE` | auto-named file under logs | Force a specific history path |
 | `HARNESS_LOG_LEVEL` | `INFO` | Logging level |
+| `HARNESS_NO_COLOR` | — | Disable ANSI colors in terminal output |
+| `HARNESS_COLOR` | — | Force ANSI colors (`1`, `true`, or `always`) |
+
+Assistant responses are rendered for terminal readability, including headings,
+ emphasis, inline code, fenced code blocks, lists, blockquotes, and horizontal
+rules. Set `HARNESS_NO_COLOR=1` for plain output or `HARNESS_COLOR=always` to
+force colors when output is redirected.
