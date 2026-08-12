@@ -3,12 +3,15 @@
 import argparse
 import logging
 import os
+import re
+import select
+import shutil
 import sys
 import termios
 import tty
 import json
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 from harness import config, get_version
 from harness.config import history_file_path
@@ -28,8 +31,15 @@ from harness.registry import (
     get_full_system_prompt,
 )
 from harness.terminal import render_markdown
+from harness.voice import VoiceSession, ensure_binary, is_supported, normalize_transcript
 
 logger = logging.getLogger(__name__)
+
+# Active STT helper, if any. Confirmations pause it so `input()` is not racing the mic.
+_voice_session: Optional[VoiceSession] = None
+# How many terminal rows the live transcript currently occupies.
+_voice_display_rows = 1
+_ANSI_RE = re.compile(r"\033\[[0-9;]*[A-Za-z]")
 
 # Terminal bracketed-paste markers (enabled via CSI ?2004h).
 _PASTE_START = "\u001b[200~"
@@ -62,7 +72,7 @@ def _banner() -> None:
         f"\n\u001b[36m\u001b[1m"
         f"Harness v{get_version()}  |  {config.get_model()}  |  {config.workspace_root()}"
         f"\u001b[0m\n"
-        "Type a request. Ctrl+C to exit.\n"
+        "Type a request. /voice for speech input. Ctrl+C to exit.\n"
     )
 
 
@@ -198,8 +208,41 @@ def _colorize_diff(diff: str) -> str:
     return "".join(colored)
 
 
+def _drain_pending_input() -> None:
+    """Drop leftover keypresses so the next input() is not auto-answered.
+
+    Voice mode reads Enter in cbreak as CR; many terminals also queue LF.
+    That LF would otherwise complete Run this command? [y/N] as a blank No.
+    """
+    if not sys.stdin.isatty():
+        return
+    fd = sys.stdin.fileno()
+    try:
+        termios.tcflush(fd, termios.TCIFLUSH)
+    except termios.error:
+        pass
+    while True:
+        ready, _, _ = select.select([fd], [], [], 0)
+        if not ready:
+            return
+        chunk = os.read(fd, 4096)
+        if not chunk:
+            return
+
+
+def _pause_voice_session() -> None:
+    """Stop the mic before blocking on keyboard confirmations."""
+    global _voice_session
+    session = _voice_session
+    if session is not None:
+        session.stop()
+        _voice_session = None
+
+
 def _confirm_command(command: str) -> Tuple[bool, str]:
     """Require an explicit human approval before running a shell command."""
+    _pause_voice_session()
+    _drain_pending_input()
     print("\n\033[33mProposed command:\033[0m %s" % command)
     try:
         answer = input("Run this command? [y/N] ").strip().lower()
@@ -218,6 +261,8 @@ def _confirm_command(command: str) -> Tuple[bool, str]:
 
 def _confirm_edit(result: Dict[str, Any]) -> Tuple[bool, str]:
     """Display a proposed diff and collect feedback when an edit is rejected."""
+    _pause_voice_session()
+    _drain_pending_input()
     print("\n\033[33mProposed edit: %s\033[0m" % result.get("path", ""))
     if result.get("diff"):
         diff = _colorize_diff(result["diff"])
@@ -235,6 +280,167 @@ def _confirm_edit(result: Dict[str, Any]) -> Tuple[bool, str]:
         print()
         feedback = ""
     return False, feedback
+
+
+def _visible_len(s: str) -> int:
+    return len(_ANSI_RE.sub("", s))
+
+
+def _terminal_width() -> int:
+    try:
+        return max(1, shutil.get_terminal_size(fallback=(80, 24)).columns)
+    except OSError:
+        return 80
+
+
+def _rows_for_voice_line(line: str, width: Optional[int] = None) -> int:
+    """How many terminal rows `line` occupies when wrapped at `width`."""
+    if width is None:
+        width = _terminal_width()
+    vis = _visible_len(line)
+    if vis <= 0:
+        return 1
+    return max(1, (vis + width - 1) // width)
+
+
+def _clear_voice_display() -> None:
+    """Erase the live transcript, including wrapped rows from a long hypothesis."""
+    global _voice_display_rows
+    if _voice_display_rows > 1:
+        sys.stdout.write("\033[%dA" % (_voice_display_rows - 1))
+    sys.stdout.write("\r\033[J")
+    sys.stdout.flush()
+    _voice_display_rows = 1
+
+
+def _render_voice_line(text: str) -> None:
+    global _voice_display_rows
+    body = normalize_transcript(text) if text else "\033[90m[listening]\033[0m"
+    line = YOU_PROMPT + body
+    _clear_voice_display()
+    sys.stdout.write(line)
+    sys.stdout.flush()
+    _voice_display_rows = _rows_for_voice_line(line)
+
+
+def _wait_voice_keys(session: VoiceSession) -> str:
+    """Block until Enter, Escape, or Ctrl+C. Return submit, cancel, or interrupt."""
+    pending = ""
+    last_text: Optional[str] = None
+    while True:
+        crashed = session.unexpected_exit()
+        if crashed:
+            raise RuntimeError(crashed)
+        text = session.current_text()
+        if text != last_text:
+            _render_voice_line(text)
+            last_text = text
+        ready, _, _ = select.select([sys.stdin], [], [], 0.05)
+        if not ready:
+            continue
+        raw = os.read(sys.stdin.fileno(), 1)
+        if not raw:
+            return "interrupt"
+        ch = raw.decode("latin-1")
+        if ch == "\x03":
+            return "interrupt"
+        pending += ch
+        if pending in ("\r", "\n"):
+            extra, _, _ = select.select([sys.stdin], [], [], 0)
+            if extra:
+                nxt = os.read(sys.stdin.fileno(), 1)
+                if nxt not in (b"\n", b"\r", b""):
+                    pass
+            return "submit"
+        if pending == "\x1b":
+            more, _, _ = select.select([sys.stdin], [], [], 0.05)
+            if not more:
+                return "cancel"
+            pending += os.read(sys.stdin.fileno(), 1).decode("latin-1")
+            if pending == "\x1b[":
+                while True:
+                    rest, _, _ = select.select([sys.stdin], [], [], 0.05)
+                    if not rest:
+                        break
+                    end = os.read(sys.stdin.fileno(), 1).decode("latin-1")
+                    if end.isalpha() or end == "~":
+                        break
+                pending = ""
+                continue
+            return "cancel"
+        pending = ""
+
+
+def _voice_loop(process: Callable[[str], None]) -> None:
+    """Sticky voice mode: listen, Enter submits, Escape returns to the typed REPL."""
+    global _voice_session
+    if not sys.stdin.isatty():
+        print("\033[90m▸ voice mode needs an interactive terminal\033[0m")
+        return
+    if not is_supported():
+        print("\033[90m▸ voice mode is only available on macOS\033[0m")
+        return
+    try:
+        ensure_binary()
+    except RuntimeError as exc:
+        print("\033[91m▸ voice: %s\033[0m" % exc)
+        return
+
+    print("\033[90m▸ voice mode on — Enter submits, Escape exits\033[0m")
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        while True:
+            session = VoiceSession()
+            _voice_session = session
+            _clear_voice_display()
+            sys.stdout.write(YOU_PROMPT + "\033[90m[starting]\033[0m")
+            sys.stdout.flush()
+            try:
+                session.start()
+                session.wait_ready()
+            except (RuntimeError, OSError) as exc:
+                _clear_voice_display()
+                print("\033[91m▸ voice: %s\033[0m" % exc)
+                return
+
+            tty.setcbreak(fd)
+            try:
+                action = _wait_voice_keys(session)
+            except KeyboardInterrupt:
+                action = "interrupt"
+            except RuntimeError as exc:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                _clear_voice_display()
+                print("\033[91m▸ voice: %s\033[0m" % exc)
+                return
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+            text = session.stop()
+            _voice_session = None
+            if action == "cancel":
+                _clear_voice_display()
+                print("\033[90m▸ voice mode off\033[0m")
+                return
+            if action == "interrupt":
+                _clear_voice_display()
+                raise KeyboardInterrupt
+            _clear_voice_display()
+            sys.stdout.write("%s%s\n" % (YOU_PROMPT, normalize_transcript(text)))
+            sys.stdout.flush()
+            if not text.strip():
+                continue
+            _drain_pending_input()
+            try:
+                process(text)
+            except RuntimeError as exc:
+                print("\033[91m▸ error: %s\033[0m" % exc)
+    finally:
+        if _voice_session is not None:
+            _voice_session.stop()
+            _voice_session = None
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 
 def run(initial_request: str = "") -> None:
@@ -332,8 +538,17 @@ def run(initial_request: str = "") -> None:
             session_auto_approve = False
             print("\033[90m▸ auto-accept disabled for this session\033[0m")
             continue
+        if command == "/voice":
+            try:
+                _voice_loop(process)
+            except KeyboardInterrupt:
+                return
+            continue
+        if command == "/voice off":
+            print("\033[90m▸ voice mode is off\033[0m")
+            continue
         if command in {"/help", "?"}:
-            print("Commands: /auto-accept, /auto-accept off, /quit")
+            print("Commands: /auto-accept, /auto-accept off, /voice, /quit")
             continue
         if user_input.strip():
             try:

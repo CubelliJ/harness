@@ -40,9 +40,27 @@ Enter to submit. Ctrl+C to exit. Bracketed paste also preserves newlines.
 During a session, use `/auto-accept` to approve all subsequent file edits without
 prompting. Shell commands always require explicit human approval; `/auto-accept`
 does not bypass command confirmations. Use `/auto-accept off` to restore edit
-confirmations. `/quit` exits and `/help` lists session commands.
+confirmations. On macOS, `/voice` starts speech input (Enter submits, Escape
+exits). `/quit` exits and `/help` lists session commands.
 
 Session transcripts land in `~/harness_logs/` by default.
+
+## Voice mode (macOS)
+
+`/voice` enters a sticky listen loop that uses Apple’s Speech framework
+(`SFSpeechRecognizer`) via a small Swift helper. There is no silence timeout:
+speak, then press **Enter** to submit the current transcript as a normal
+request. After the agent finishes, listening resumes. **Escape** (or `/voice off`
+at the typed prompt) returns to keyboard input. Edit and command confirmations
+stay on the keyboard; the microphone is paused while they run.
+
+The helper is compiled on first use into `~/.harness/bin/harness-stt.app` (a
+small app bundle, so macOS privacy prompts work) and needs the Xcode Command
+Line Tools (`xcode-select --install`). macOS will prompt for **Microphone** and
+**Speech Recognition** access. On-device recognition is used when the current
+locale supports it; otherwise Apple’s default recognizer is used (which may
+send audio to Apple). `/voice` is unavailable on Linux and Windows.
+
 
 ## Tools
 
@@ -150,6 +168,7 @@ Python versions.
 | `HARNESS_LOG_LEVEL` | `INFO` | Logging level |
 | `HARNESS_NO_COLOR` | — | Disable ANSI colors in terminal output |
 | `HARNESS_COLOR` | — | Force ANSI colors (`1`, `true`, or `always`) |
+| `HARNESS_STT_BIN` | `~/.harness/bin/harness-stt.app` | Override path to the compiled speech helper |
 
 Assistant responses are rendered for terminal readability, including headings,
  emphasis, inline code, fenced code blocks, lists, blockquotes, and horizontal

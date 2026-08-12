@@ -4,3 +4,5 @@ __pycache__/
 .DS_Store
 
 eval_scenarios
+native/stt/harness-stt
+native/stt/harness-stt.app
