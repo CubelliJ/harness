@@ -29,7 +29,9 @@ From the directory that contains the `harness/` package:
 python -m harness
 ```
 
-You’ll get a REPL. Type a request, press Enter. Ctrl+C to exit.
+You’ll get a REPL. Type a request, press Enter. Use **Shift+Enter** to insert a
+newline without submitting (in terminals that report modified keys), and press
+Enter to submit. Ctrl+C to exit. Bracketed paste also preserves newlines.
 
 Session transcripts land in `~/harness_logs/` by default.
 

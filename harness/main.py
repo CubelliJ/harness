@@ -1,6 +1,9 @@
 """Main entry point and agent loop."""
 
 import logging
+import sys
+import termios
+import tty
 
 from harness import config, get_version
 from harness.config import history_file_path
@@ -22,6 +25,28 @@ from harness.registry import (
 
 logger = logging.getLogger(__name__)
 
+# Terminal bracketed-paste markers (enabled via CSI ?2004h).
+_PASTE_START = "\u001b[200~"
+_PASTE_END = "\u001b[201~"
+
+# Terminals that support modified-key reporting use one of these encodings for
+# Shift+Enter.  A plain CR cannot be distinguished from Enter, so terminals
+# without modified-key reporting still need to be configured to emit one of
+# these sequences (kitty keyboard protocol uses the first form).
+_SHIFT_ENTER_SEQUENCES = (
+    "\u001b[13;2u",       # kitty keyboard protocol
+    "\u001b[27;2;13~",    # xterm modifyOtherKeys
+    "\u001b[13;2~",       # older/alternate CSI encoding
+)
+# Ask capable terminals to report modified keys.  Unsupported terminals
+# ignore this sequence, and the fallback encodings above remain accepted.
+_KITTY_KEYBOARD_ENABLE = "\u001b[>1u"
+_KITTY_KEYBOARD_DISABLE = "\u001b[<u"
+
+
+def _is_shift_enter(sequence: str) -> bool:
+    return sequence in _SHIFT_ENTER_SEQUENCES
+
 
 def _banner() -> None:
     print(
@@ -32,6 +57,116 @@ def _banner() -> None:
     )
 
 
+def _echo(ch: str) -> None:
+    if ch == "\n":
+        sys.stdout.write("\n")
+    elif ch in ("\t",) or ch >= " ":
+        sys.stdout.write(ch)
+    sys.stdout.flush()
+
+
+def _read_input(prompt: str) -> str:
+    """Read one request; bracketed paste keeps newlines as part of the input."""
+    if not sys.stdin.isatty():
+        return input(prompt)
+
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setcbreak(fd)
+        sys.stdout.write("\u001b[?2004h" + _KITTY_KEYBOARD_ENABLE)
+        sys.stdout.flush()
+
+        buf: list[str] = []
+        pending = ""
+        in_paste = False
+
+        while True:
+            ch = sys.stdin.read(1)
+            if not ch:
+                raise EOFError
+            if ch == "\u0003":
+                raise KeyboardInterrupt
+
+            pending += ch
+
+            # Shift+Enter is reported as an escape sequence by terminals that
+            # support modified keys.  Treat it as an embedded newline rather
+            # than the submit key.  This check must happen before the generic
+            # escape-sequence handling below, which intentionally ignores
+            # unknown escape sequences.
+            if not in_paste and _is_shift_enter(pending):
+                buf.append("\n")
+                _echo("\n")
+                pending = ""
+                continue
+
+            if not in_paste and _PASTE_START.startswith(pending):
+                if pending == _PASTE_START:
+                    pending = ""
+                    in_paste = True
+                continue
+
+            if in_paste:
+                if _PASTE_END.startswith(pending):
+                    if pending == _PASTE_END:
+                        pending = ""
+                        in_paste = False
+                    continue
+                # Not an end-marker prefix — commit pending as paste content.
+                for c in pending:
+                    buf.append(c)
+                    _echo(c)
+                pending = ""
+                continue
+
+            # Incomplete ESC sequence (arrows, etc.): hold or drop.
+            if pending == "\u001b" or (
+                pending.startswith("\u001b[")
+                and not pending.endswith("~")
+                and not pending[-1].isalpha()
+                and len(pending) < 16
+            ):
+                if _PASTE_START.startswith(pending):
+                    continue
+                if pending.startswith("\u001b[") and len(pending) < 16:
+                    continue
+                pending = ""
+                continue
+            if pending.startswith("\u001b"):
+                pending = ""
+                continue
+
+            # In cbreak, Enter is typically \r (not \n).
+            if pending in ("\r", "\n"):
+                pending = ""
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+                return "".join(buf)
+
+            if pending in ("\x7f", "\x08"):
+                pending = ""
+                if buf and buf[-1] != "\n":
+                    buf.pop()
+                    sys.stdout.write("\b \b")
+                    sys.stdout.flush()
+                elif buf:
+                    buf.pop()
+                continue
+
+            for c in pending:
+                buf.append(c)
+                _echo(c)
+            pending = ""
+    finally:
+        sys.stdout.write("\u001b[?2004l" + _KITTY_KEYBOARD_DISABLE)
+        sys.stdout.flush()
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+
 def run() -> None:
     _banner()
     history_path = history_file_path()
@@ -40,7 +175,7 @@ def run() -> None:
 
     while True:
         try:
-            user_input = input(YOU_PROMPT)
+            user_input = _read_input(YOU_PROMPT)
         except (KeyboardInterrupt, EOFError):
             break
 
