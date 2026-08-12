@@ -211,6 +211,7 @@ def _confirm_edit(result: Dict[str, Any]) -> bool:
 
 def run() -> None:
     _banner()
+    session_auto_approve = config.auto_approve()
     history_path = history_file_path()
     conversation = [system_message(get_full_system_prompt())]
     save_conversation_history(history_path, conversation)
@@ -220,6 +221,23 @@ def run() -> None:
             user_input = _read_input(YOU_PROMPT)
         except (KeyboardInterrupt, EOFError):
             break
+
+        command = user_input.strip().lower()
+        if command in {"/quit", "/exit"}:
+            break
+        if command in {"/auto-accept", "/auto-approve"}:
+            session_auto_approve = True
+            print("\033[90m▸ auto-accept enabled for this session\033[0m")
+            continue
+        if command in {"/auto-accept off", "/auto-approve off"}:
+            session_auto_approve = False
+            print("\033[90m▸ auto-accept disabled for this session\033[0m")
+            continue
+        if command in {"/help", "?"}:
+            print("Commands: /auto-accept, /auto-accept off, /quit")
+            continue
+        if not user_input.strip():
+            continue
 
         conversation.append(user_message(user_input))
         save_conversation_history(history_path, conversation)
@@ -251,7 +269,7 @@ def run() -> None:
                         pass
                     elif config.dry_run():
                         result["action"] = "dry_run"
-                    elif config.auto_approve() or _confirm_edit(result):
+                    elif session_auto_approve or _confirm_edit(result):
                         result = execute_tool(name, dict(args, apply=True))
                     else:
                         result["action"] = "edit_rejected"

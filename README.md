@@ -33,6 +33,10 @@ You’ll get a REPL. Type a request, press Enter. Use **Shift+Enter** to insert 
 newline without submitting (in terminals that report modified keys), and press
 Enter to submit. Ctrl+C to exit. Bracketed paste also preserves newlines.
 
+During a session, use `/auto-accept` to approve all subsequent edits without
+prompting. Use `/auto-accept off` to restore edit confirmations. `/quit` exits
+and `/help` lists session commands.
+
 Session transcripts land in `~/harness_logs/` by default.
 
 ## Tools
@@ -56,6 +60,17 @@ python -m harness --dry-run
 ```
 
 Relative paths resolve under the current working directory (or `HARNESS_WORKSPACE` if set).
+
+## Tests
+
+Run the unit test suite with the Python standard library:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+GitHub Actions runs the suite on every push and pull request across supported
+Python versions.
 
 ## Config (optional)
 
