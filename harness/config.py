@@ -50,6 +50,18 @@ def history_file_path() -> Path:
     return d / f"coding_agent_history_{stamp}.txt"
 
 
+def auto_approve() -> bool:
+    return os.environ.get("HARNESS_AUTO_APPROVE", "").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+
+
+def dry_run() -> bool:
+    return os.environ.get("HARNESS_DRY_RUN", "").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+
+
 def init() -> None:
     _try_load_dotenv()
     logging.basicConfig(

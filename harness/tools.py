@@ -1,5 +1,10 @@
 """Barebones file tools: read, list, edit."""
 
+import difflib
+import os
+import stat
+import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
 
@@ -57,23 +62,74 @@ def list_files(path: str = ".") -> Dict[str, Any]:
     }
 
 
-def edit_file(path: str, old_str: str, new_str: str) -> Dict[str, Any]:
-    """Replace first occurrence of old_str with new_str. Empty old_str creates/overwrites the file."""
+def edit_preview(path: str, old_str: str, new_str: str) -> Dict[str, Any]:
+    """Validate an edit and return its proposed contents and unified diff."""
     try:
         full_path = resolve_abs_path(path)
     except ValueError as e:
         return {"error": str(e)}
+
     if old_str == "":
-        full_path.parent.mkdir(parents=True, exist_ok=True)
-        full_path.write_text(new_str, encoding="utf-8")
-        return {"path": str(full_path), "action": "created_file"}
-    if not full_path.is_file():
-        return {"error": f"File not found: {full_path}"}
-    original = full_path.read_text(encoding="utf-8")
-    if old_str not in original:
-        return {"path": str(full_path), "action": "old_str not found"}
-    full_path.write_text(original.replace(old_str, new_str, 1), encoding="utf-8")
-    return {"path": str(full_path), "action": "edited"}
+        original = "" if not full_path.exists() else full_path.read_text(encoding="utf-8")
+        proposed = new_str
+        action = "created_file" if not full_path.exists() else "overwritten_file"
+    else:
+        if not full_path.is_file():
+            return {"error": f"File not found: {full_path}"}
+        original = full_path.read_text(encoding="utf-8")
+        matches = original.count(old_str)
+        if not matches:
+            return {"path": str(full_path), "action": "old_str not found", "matches": 0}
+        proposed = original.replace(old_str, new_str, 1)
+        action = "edited"
+
+    diff = "".join(difflib.unified_diff(
+        original.splitlines(keepends=True),
+        proposed.splitlines(keepends=True),
+        fromfile=str(full_path),
+        tofile=str(full_path),
+    ))
+    return {
+        "path": str(full_path), "action": action, "matches": original.count(old_str),
+        "original": original, "proposed": proposed, "diff": diff,
+    }
+
+
+def edit_file(path: str, old_str: str, new_str: str, *, apply: bool = True) -> Dict[str, Any]:
+    """Propose an edit, optionally applying it with a backup and atomic replace."""
+    preview = edit_preview(path, old_str, new_str)
+    if preview.get("error") or preview.get("action") == "old_str not found":
+        return preview
+    if not apply:
+        preview.pop("original", None)
+        preview.pop("proposed", None)
+        preview["action"] = "dry_run"
+        return preview
+
+    full_path = Path(preview["path"])
+    if full_path.exists():
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        backup = full_path.with_name(full_path.name + f".harness.bak.{stamp}")
+        backup.write_text(preview["original"], encoding="utf-8")
+        try:
+            os.chmod(backup, stat.S_IRUSR | stat.S_IWUSR)
+        except OSError:
+            pass
+        preview["backup_path"] = str(backup)
+    full_path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix=f".{full_path.name}.", dir=str(full_path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as temp_file:
+            temp_file.write(preview["proposed"])
+        if full_path.exists():
+            os.chmod(temp_name, stat.S_IMODE(full_path.stat().st_mode))
+        os.replace(temp_name, full_path)
+    finally:
+        if os.path.exists(temp_name):
+            os.unlink(temp_name)
+    preview.pop("original", None)
+    preview.pop("proposed", None)
+    return preview
 
 
 ALL_TOOLS = [

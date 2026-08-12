@@ -1,9 +1,12 @@
 """Main entry point and agent loop."""
 
+import argparse
 import logging
+import os
 import sys
 import termios
 import tty
+from typing import Any, Dict
 
 from harness import config, get_version
 from harness.config import history_file_path
@@ -42,6 +45,9 @@ _SHIFT_ENTER_SEQUENCES = (
 # ignore this sequence, and the fallback encodings above remain accepted.
 _KITTY_KEYBOARD_ENABLE = "\u001b[>1u"
 _KITTY_KEYBOARD_DISABLE = "\u001b[<u"
+# With the Kitty keyboard protocol enabled, Ctrl+C is reported as this CSI
+# sequence rather than the traditional ETX byte (\\x03).
+_CTRL_C_SEQUENCES = ("\u001b[99;5u",)
 
 
 def _is_shift_enter(sequence: str) -> bool:
@@ -92,6 +98,11 @@ def _read_input(prompt: str) -> str:
                 raise KeyboardInterrupt
 
             pending += ch
+
+            # The Kitty keyboard protocol encodes Ctrl+C as CSI 99;5u. Handle
+            # it before generic escape-sequence filtering, which would drop it.
+            if not in_paste and pending in _CTRL_C_SEQUENCES:
+                raise KeyboardInterrupt
 
             # Shift+Enter is reported as an escape sequence by terminals that
             # support modified keys.  Treat it as an embedded newline rather
@@ -167,6 +178,37 @@ def _read_input(prompt: str) -> str:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 
+def _colorize_diff(diff: str) -> str:
+    """Add background colors to added and removed diff lines."""
+    green = "\033[30;42m"
+    red = "\033[30;41m"
+    reset = "\033[0m"
+    colored = []
+    for line in diff.splitlines(keepends=True):
+        # Do not color the unified-diff file headers ("+++" and "---").
+        if line.startswith("+") and not line.startswith("+++"):
+            colored.append(f"{green}{line}{reset}")
+        elif line.startswith("-") and not line.startswith("---"):
+            colored.append(f"{red}{line}{reset}")
+        else:
+            colored.append(line)
+    return "".join(colored)
+
+
+def _confirm_edit(result: Dict[str, Any]) -> bool:
+    """Display a proposed diff and ask before applying it."""
+    print("\n\033[33mProposed edit: %s\033[0m" % result.get("path", ""))
+    if result.get("diff"):
+        diff = _colorize_diff(result["diff"])
+        print(diff, end="" if diff.endswith("\n") else "\n")
+    try:
+        answer = input("Apply this edit? [y/N] ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+    return answer in {"y", "yes"}
+
+
 def run() -> None:
     _banner()
     history_path = history_file_path()
@@ -200,7 +242,22 @@ def run() -> None:
 
             for tc in tool_calls:
                 call_id, name, args = parse_tool_call(tc)
-                result = execute_tool(name, args)
+                if name == "edit_file":
+                    # Preview first, then apply only after explicit approval.
+                    preview_args = dict(args)
+                    preview_args["apply"] = False
+                    result = execute_tool(name, preview_args)
+                    if result.get("error") or result.get("action") == "old_str not found":
+                        pass
+                    elif config.dry_run():
+                        result["action"] = "dry_run"
+                    elif config.auto_approve() or _confirm_edit(result):
+                        result = execute_tool(name, dict(args, apply=True))
+                    else:
+                        result["action"] = "edit_rejected"
+                        result.pop("diff", None)
+                else:
+                    result = execute_tool(name, args)
                 summary = (
                     result.get("error")
                     or result.get("action")
@@ -216,6 +273,14 @@ def run() -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="CLI coding agent")
+    parser.add_argument("--yes", action="store_true", help="approve all file edits")
+    parser.add_argument("--dry-run", action="store_true", help="show edits without applying them")
+    args = parser.parse_args()
+    if args.yes:
+        os.environ["HARNESS_AUTO_APPROVE"] = "1"
+    if args.dry_run:
+        os.environ["HARNESS_DRY_RUN"] = "1"
     config.init()
     run()
 

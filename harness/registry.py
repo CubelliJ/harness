@@ -9,6 +9,7 @@ SYSTEM_PROMPT = """
 You are a coding assistant with local file tools for this Python repo.
 Use tools to inspect and edit files. Prefer harness/*.py and README.md.
 Do not claim tools are unavailable — call them.
+Be brief on the answers.
 """.strip()
 
 # OpenAI/OpenRouter function-calling schemas
@@ -83,7 +84,14 @@ def execute_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
         if tool_name == "list_files":
             return tool(args.get("path", "."))
         if tool_name == "edit_file":
-            return tool(args.get("path", "."), args.get("old_str", ""), args.get("new_str", ""))
+            # ``apply`` is an internal execution flag and is intentionally not
+            # exposed in the model-facing schema.
+            return tool(
+                args.get("path", "."),
+                args.get("old_str", ""),
+                args.get("new_str", ""),
+                apply=args.get("apply", True),
+            )
     except Exception as e:
         return {"error": f"{type(e).__name__}: {e}"}
     return {"error": "Unhandled tool"}

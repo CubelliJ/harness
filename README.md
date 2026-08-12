@@ -43,7 +43,17 @@ The model can call:
 |------|---------|
 | `read_file` | Read a file |
 | `list_files` | List a directory |
-| `edit_file` | Edit a file (empty `old_str` creates/overwrites) |
+| `edit_file` | Propose and edit a file (empty `old_str` creates/overwrites) |
+
+Edits are shown as a unified diff and require confirmation by default. Existing
+files are backed up to `<filename>.harness.bak` before replacement. Use
+`--yes` (or `HARNESS_AUTO_APPROVE=1`) to approve edits automatically, or
+`--dry-run` (or `HARNESS_DRY_RUN=1`) to preview edits without changing files.
+
+```bash
+python -m harness --yes
+python -m harness --dry-run
+```
 
 Relative paths resolve under the current working directory (or `HARNESS_WORKSPACE` if set).
 
