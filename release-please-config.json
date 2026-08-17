@@ -1,11 +1,14 @@
 {
-  "release-type": "simple",
-  "package-name": "harness",
-  "initial-version": "0.9.0",
   "include-component-in-tag": false,
   "changelog-path": "CHANGELOG.md",
-  "extra-files": [
-    "pyproject.toml",
-    "harness/__init__.py"
-  ]
+  "packages": {
+    ".": {
+      "package-name": "harness-cli",
+      "release-type": "simple",
+      "extra-files": [
+        "pyproject.toml",
+        "harness/__init__.py"
+      ]
+    }
+  }
 }
