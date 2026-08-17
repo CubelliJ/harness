@@ -4,6 +4,8 @@ on:
   push:
   pull_request:
 
+# CI is required before Release Please PRs can be merged automatically.
+
 jobs:
   test:
     runs-on: ubuntu-latest
