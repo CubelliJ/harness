@@ -6,3 +6,7 @@ __pycache__/
 eval_scenarios
 native/stt/harness-stt
 native/stt/harness-stt.app
+
+build/
+harness_cli.egg-info/
+dist/

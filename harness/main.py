@@ -558,6 +558,13 @@ def run(initial_request: str = "") -> None:
 
 
 def main() -> None:
+    # Configuration is a subcommand-like convenience kept compatible with the
+    # existing argument parser. It is available before packaging as well.
+    if len(sys.argv) > 1 and sys.argv[1] == "configure":
+        config._try_load_dotenv()
+        config.configure()
+        return
+
     parser = argparse.ArgumentParser(description="CLI coding agent")
     parser.add_argument("--yes", action="store_true", help="approve all file edits")
     parser.add_argument("--dry-run", action="store_true", help="show edits without applying them")

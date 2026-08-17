@@ -13,24 +13,50 @@ This repository was inspired by [The Emperor Has No Clothes](https://www.mihaile
 
 No third-party packages — stdlib only.
 
+## Install
+
+Clone the repository, then install a self-contained copy with the Makefile:
+
+```bash
+git clone <repository-url> harness
+cd harness
+make install
+```
+
+This creates a private Python environment under `~/.harness/venv`, installs the
+package there, and adds a `harness` launcher to `~/.local/bin`. No activation or
+manual environment management is needed, and no runtime third-party
+dependencies are required. The installer adds `~/.local/bin` to your shell
+startup file; run the printed `source` command once in the current terminal.
+
 ## Setup
 
-```bash
-cd /path/to/harness
-```
-
-Create a `.env` in the project root (or export the variable):
+From the repository directory, configure Harness interactively:
 
 ```bash
-OPENROUTER_API_KEY=sk-or-...
+make configure
 ```
+
+If no key is configured when Harness starts, it securely prompts for one and
+offers to save it globally (`~/.harness/config.env`) or in the current project
+(`./.env`). Configuration files are created with restricted permissions. You
+can also use `OPENROUTER_API_KEY` in the environment; environment variables
+always take precedence.
 
 ## Run
 
-From the directory that contains the `harness/` package:
+Before packaging, run from the repository with:
 
 ```bash
-python -m harness
+make run
+# or: python -m harness
+```
+
+The current directory is the workspace, so the same command can be used from
+any project once Harness is installed. To change the saved key later, run:
+
+```bash
+python -m harness configure
 ```
 
 You’ll get a REPL. Type a request, press Enter. Use **Shift+Enter** to insert a

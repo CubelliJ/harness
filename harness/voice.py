@@ -18,7 +18,9 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-_SOURCE_DIR = Path(__file__).resolve().parent.parent / "native" / "stt"
+# Keep the Swift sources inside the Python package so wheel installs retain
+# the files needed to build the helper on first use.
+_SOURCE_DIR = Path(__file__).resolve().parent / "native" / "stt"
 _APP_NAME = "harness-stt.app"
 _EXECUTABLE_NAME = "harness-stt"
 _SOL_LOCAL = 0

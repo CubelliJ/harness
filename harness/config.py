@@ -1,7 +1,9 @@
 """Minimal config: OpenRouter + workspace."""
 
+import getpass
 import logging
 import os
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -12,25 +14,81 @@ OPENROUTER_MODEL = "openai/gpt-5.6-luna"
 REQUEST_TIMEOUT_S = 600
 
 
+def _read_dotenv(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    try:
+        for raw in path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key, val = key.strip(), val.strip().strip('"').strip("'")
+            if key:
+                values[key] = val
+    except OSError:
+        pass
+    return values
+
+
+def global_config_path() -> Path:
+    return Path(os.environ.get("HARNESS_CONFIG_FILE", "~/.harness/config.env")).expanduser()
+
+
 def _try_load_dotenv() -> None:
-    """Load the repository .env, while allowing an explicit cwd .env too."""
-    # Resolve from the installed/source package rather than cwd: HARNESS_WORKSPACE
-    # is commonly a scenario directory, but credentials live at repository root.
-    candidates = [Path(__file__).resolve().parent.parent / ".env", Path.cwd() / ".env"]
+    """Load global then project config; shell variables always win."""
+    # The source checkout .env remains useful during development, but an installed
+    # Harness must never depend on the directory where its package was installed.
+    candidates = [global_config_path(), Path.cwd() / ".env"]
+    source_env = Path(__file__).resolve().parent.parent / ".env"
+    if source_env != Path.cwd() / ".env":
+        candidates.append(source_env)
     for path in candidates:
-        if not path.is_file():
-            continue
-        try:
-            for raw in path.read_text(encoding="utf-8").splitlines():
-                line = raw.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                key, _, val = line.partition("=")
-                key, val = key.strip(), val.strip().strip('"').strip("'")
-                if key and key not in os.environ:
-                    os.environ[key] = val
-        except OSError:
-            pass
+        for key, value in _read_dotenv(path).items():
+            os.environ.setdefault(key, value)
+
+
+def _save_config(path: Path, key: str, value: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    values = _read_dotenv(path)
+    values[key] = value
+    path.write_text("".join(f"{k}={v}\n" for k, v in values.items()), encoding="utf-8")
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
+
+
+def configure() -> bool:
+    """Interactively collect and save an API key. Return whether it succeeded."""
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        print("Harness needs an interactive terminal to configure an API key.", file=sys.stderr)
+        return False
+    print("OpenRouter API key not found.")
+    try:
+        value = getpass.getpass("Paste your OpenRouter API key (input hidden): ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+    if not value:
+        print("No API key entered.", file=sys.stderr)
+        return False
+    print("Save key globally or for this project? [global/project/none]", end=" ")
+    try:
+        choice = input().strip().lower() or "global"
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+    if choice == "global":
+        path = global_config_path()
+    elif choice == "project":
+        path = Path.cwd() / ".env"
+    else:
+        os.environ["OPENROUTER_API_KEY"] = value
+        return True
+    _save_config(path, "OPENROUTER_API_KEY", value)
+    os.environ["OPENROUTER_API_KEY"] = value
+    print(f"Saved configuration to {path}")
+    return True
 
 
 def workspace_root() -> Path:
@@ -68,6 +126,15 @@ def dry_run() -> bool:
 
 def init() -> None:
     _try_load_dotenv()
+    if not os.environ.get("OPENROUTER_API_KEY", "").strip():
+        if sys.stdin.isatty() and sys.stdout.isatty():
+            if not configure():
+                raise RuntimeError("OPENROUTER_API_KEY is required to use Harness.")
+        else:
+            raise RuntimeError(
+                "OPENROUTER_API_KEY is not configured. Run `python -m harness configure` "
+                "or set the environment variable."
+            )
     logging.basicConfig(
         level=getattr(logging, os.environ.get("HARNESS_LOG_LEVEL", "INFO").upper(), logging.INFO),
         format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
