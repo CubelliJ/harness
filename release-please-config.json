@@ -1,6 +1,9 @@
 {
   "include-component-in-tag": false,
   "changelog-path": "CHANGELOG.md",
+  "extra-files": [
+    "harness/__init__.py"
+  ],
   "packages": {
     ".": {
       "package-name": "harness-cli",
