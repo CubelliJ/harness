@@ -4,9 +4,8 @@
   "packages": {
     ".": {
       "package-name": "harness-cli",
-      "release-type": "simple",
+      "release-type": "python",
       "extra-files": [
-        "pyproject.toml",
         "harness/__init__.py"
       ]
     }
