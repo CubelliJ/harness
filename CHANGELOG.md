@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.11.0](https://github.com/CubelliJ/harness/compare/v0.10.0...v0.11.0) (2026-08-18)
+
+
+### Features
+
+* load workspace agent instructions ([713cdf6](https://github.com/CubelliJ/harness/commit/713cdf6fcc2915341e2272bea722d7e736881455))
+* load workspace agent instructions ([bf77ca3](https://github.com/CubelliJ/harness/commit/bf77ca3f4df9625ca9a9931212bafee603e40d93))
+
+
+### Bug Fixes
+
+* auto-merge release pull requests ([#14](https://github.com/CubelliJ/harness/issues/14)) ([554cd88](https://github.com/CubelliJ/harness/commit/554cd8823a6ea3e4b3f7a9e03f51ac30473d8eb1))
+* merge clean release pull requests ([#15](https://github.com/CubelliJ/harness/issues/15)) ([1cdca94](https://github.com/CubelliJ/harness/commit/1cdca940510f267cbe01746593139e46730928e4))
+
 ## [0.10.0](https://github.com/CubelliJ/harness/compare/v0.9.0...v0.10.0) (2026-08-18)
 
 
