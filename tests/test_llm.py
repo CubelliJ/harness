@@ -1,6 +1,6 @@
 import unittest
 
-from harness.llm import _is_rate_limited, parse_tool_call
+from harness.llm import _is_rate_limited, model_context_length, parse_tool_call
 
 
 class LlmTestCase(unittest.TestCase):
@@ -24,6 +24,11 @@ class LlmTestCase(unittest.TestCase):
                 "id": "call-1",
                 "function": {"name": "x", "arguments": "[]"},
             })
+
+    def test_model_context_length(self):
+        body = {"data": [{"id": "model-a", "context_length": 128000}]}
+        self.assertEqual(model_context_length(body, "model-a"), 128000)
+        self.assertIsNone(model_context_length(body, "missing"))
 
     def test_is_rate_limited(self):
         self.assertTrue(_is_rate_limited(RuntimeError("OpenRouter error: {'code': 429}")))

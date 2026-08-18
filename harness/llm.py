@@ -8,7 +8,13 @@ import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
 
-from harness.config import OPENROUTER_CHAT_URL, REQUEST_TIMEOUT_S, get_model
+from harness.config import (
+    OPENROUTER_CHAT_URL,
+    MODEL_METADATA_TIMEOUT_S,
+    OPENROUTER_MODELS_URL,
+    REQUEST_TIMEOUT_S,
+    get_model,
+)
 from harness.registry import OPENAI_TOOLS
 
 logger = logging.getLogger(__name__)
@@ -16,6 +22,29 @@ logger = logging.getLogger(__name__)
 ASSISTANT_PREFIX = "\u001b[92m▸ Assistant:\u001b[0m "
 MAX_RETRIES = 5
 RETRY_BASE_S = 2.0
+
+
+def get_model_context_length() -> Optional[int]:
+    """Return the provider-reported context limit for the configured model."""
+    try:
+        with urllib.request.urlopen(
+            urllib.request.Request(OPENROUTER_MODELS_URL, headers=_headers()),
+            timeout=MODEL_METADATA_TIMEOUT_S,
+        ) as response:
+            body = json.loads(response.read().decode("utf-8"))
+        return model_context_length(body, get_model())
+    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        logger.warning("Could not retrieve model context length: %s", exc)
+    return None
+
+
+def model_context_length(body: Dict[str, Any], model_id: str) -> Optional[int]:
+    """Extract a provider-reported context limit from a models response."""
+    for model in body.get("data") or []:
+        if model.get("id") == model_id:
+            limit = model.get("context_length")
+            return int(limit) if limit is not None else None
+    return None
 
 
 def _is_rate_limited(exc: BaseException) -> bool:
@@ -69,12 +98,12 @@ def _api_messages(conversation: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 def execute_llm_call(
     conversation: List[Dict[str, Any]],
-) -> Tuple[str, List[Dict[str, Any]]]:
+) -> Tuple[str, List[Dict[str, Any]], Dict[str, Any]]:
     """
     Non-streaming chat completion with native tools.
 
-    Returns (assistant_text, tool_calls). tool_calls is empty when the model
-    is done talking; otherwise each entry is an OpenAI tool_call object.
+    Returns (assistant_text, tool_calls, usage). ``usage`` contains the
+    provider-reported token counts, including ``prompt_tokens`` for context.
     Retries transient OpenRouter rate limits with exponential backoff.
     """
     model = get_model()
@@ -123,6 +152,7 @@ def execute_llm_call(
         message = choices[0].get("message") or {}
         content = message.get("content") or ""
         tool_calls = message.get("tool_calls") or []
+        usage = body.get("usage") or {}
 
         logger.debug(
             "OpenRouter OK in %.2fs chars=%d tool_calls=%d",
@@ -130,7 +160,7 @@ def execute_llm_call(
             len(content),
             len(tool_calls),
         )
-        return content, tool_calls
+        return content, tool_calls, usage
 
     assert last_error is not None
     raise last_error
