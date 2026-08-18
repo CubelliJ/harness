@@ -2,7 +2,7 @@ name: Tests
 
 on:
   push:
-  pull_request:
+  pull_request_target:
 
 # CI is required before Release Please PRs can be merged automatically.
 
@@ -14,8 +14,10 @@ jobs:
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
 
     steps:
-      - name: Check out repository
+      - name: Check out pull request
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Set up Python
         uses: actions/setup-python@v5
         with:

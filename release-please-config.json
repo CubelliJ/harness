@@ -9,7 +9,10 @@
       "package-name": "harness-cli",
       "release-type": "python",
       "extra-files": [
-        "harness/__init__.py"
+        {
+          "type": "generic",
+          "path": "harness/__init__.py"
+        }
       ]
     }
   }

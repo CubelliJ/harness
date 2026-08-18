@@ -1,6 +1,8 @@
 """Harness — barebones LLM coding assistant."""
 
-__version__ = "0.9.0"
+# Keep the version in a conventional assignment so release tooling can update it.
+version = "0.9.0"
+__version__ = version
 
 
 def get_version() -> str:
