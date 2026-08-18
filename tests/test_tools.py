@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from harness import tools
+from harness.registry import get_full_system_prompt
 
 
 class ToolsTestCase(unittest.TestCase):
@@ -23,6 +24,15 @@ class ToolsTestCase(unittest.TestCase):
         self.patcher.stop()
         self.env_patcher.stop()
         self.temp_dir.cleanup()
+
+    def test_system_prompt_loads_workspace_agents_instructions(self):
+        (self.workspace / "AGENTS.md").write_text("Use the develop release flow.", encoding="utf-8")
+        prompt = get_full_system_prompt(self.workspace)
+        self.assertIn("Workspace instructions", prompt)
+        self.assertIn("Use the develop release flow.", prompt)
+
+    def test_system_prompt_ignores_missing_agents_file(self):
+        self.assertEqual(get_full_system_prompt(self.workspace), get_full_system_prompt())
 
     def test_resolve_abs_path_rejects_traversal(self):
         with self.assertRaises(ValueError):
