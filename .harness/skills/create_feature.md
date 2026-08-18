@@ -49,8 +49,10 @@ feature/* → develop → main
    ```
 
 3. The release PR updates `pyproject.toml`, which is the single authoritative
-   version source, and updates the changelog and manifest. The release PR is
-   automatically merged after its required checks pass.
+   version source, and updates the changelog and manifest. Merge that PR
+   manually after CI passes. Do not auto-merge it: GitHub suppresses workflow
+   events from Actions merges, so the version tag and GitHub Release would
+   not be created.
 4. After the release PR is merged and `develop` contains the new version, open
    or merge a promotion PR from `develop` into `main`.
 5. Promotion PRs from `develop` into `main` must use a regular merge commit.

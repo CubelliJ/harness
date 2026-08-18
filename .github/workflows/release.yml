@@ -3,6 +3,7 @@ name: Release
 on:
   push:
     branches: [develop]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -15,9 +16,6 @@ jobs:
       - name: Create or update release pull request
         uses: googleapis/release-please-action@v4
         with:
-          # A repository GITHUB_TOKEN cannot trigger the follow-up push workflow
-          # after the release PR is merged. Use a PAT or GitHub App token instead.
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           target-branch: develop
