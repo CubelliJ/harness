@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.16.2](https://github.com/CubelliJ/harness/compare/v0.16.1...v0.16.2) (2026-08-18)
+
+
+### Bug Fixes
+
+* bump and tag versions automatically on develop ([94154d6](https://github.com/CubelliJ/harness/commit/94154d6372690dd080992a5f12d6fe13accfcf5d))
+* cut the version tag in the same release workflow ([1e0ffc6](https://github.com/CubelliJ/harness/commit/1e0ffc65b660892cbb3071953e3cc1c707216857))
+
 ## [0.16.1](https://github.com/CubelliJ/harness/compare/v0.16.0...v0.16.1) (2026-08-18)
 
 
