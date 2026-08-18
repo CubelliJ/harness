@@ -37,6 +37,10 @@ jobs:
               --repo "$GITHUB_REPOSITORY" \
               --auto \
               --squash \
+              --delete-branch \
+            || gh pr merge "$pr_number" \
+              --repo "$GITHUB_REPOSITORY" \
+              --squash \
               --delete-branch
           else
             echo "No open Release Please pull request found."
