@@ -10,23 +10,23 @@ progress, or what changed in the repository.
    git branch --show-current
    ```
 
-2. Review the branch's commits relative to `develop`:
+2. Review the branch's commits relative to `origin/develop`:
 
    ```bash
-   git log --oneline --decorate develop..HEAD
+   git log --oneline --decorate origin/develop..HEAD
    ```
 
-3. Review the full working-tree diff relative to `develop`:
+3. Review the full working-tree diff relative to `origin/develop`:
 
    ```bash
-   git diff --stat develop...HEAD
-   git diff develop...HEAD
+   git diff --stat origin/develop...HEAD
+   git diff origin/develop...HEAD
    ```
 
-4. If `develop` is unavailable locally, report that clearly and use the best
-   available local reference only after confirming it exists. Do not silently
-   compare against another branch.
+4. If `origin/develop` is unavailable locally, report that clearly and use the
+   best available local reference only after confirming it exists. Do not
+   silently compare against another branch.
 
 5. Summarize the current branch, clean or modified status, commits and files
-   changed relative to `develop`, and any uncommitted changes. Do not claim
-   work was committed, pushed, or merged unless Git output confirms it.
+   changed relative to `origin/develop`, and any uncommitted changes. Do not
+   claim work was committed, pushed, or merged unless Git output confirms it.
