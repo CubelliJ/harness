@@ -1,9 +1,8 @@
 name: Auto-merge Release PR
 
 on:
-  workflow_run:
-    workflows: [Tests]
-    types: [completed]
+  pull_request_target:
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
@@ -12,28 +11,17 @@ permissions:
 jobs:
   merge-release:
     if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      startsWith(github.event.workflow_run.head_branch, 'release-please--branches--develop--')
+      github.event.pull_request.base.ref == 'develop' &&
+      startsWith(github.event.pull_request.head.ref, 'release-please--branches--develop--')
     runs-on: ubuntu-latest
     steps:
-      - name: Merge the tested Release Please PR
+      - name: Enable auto-merge for the Release Please PR
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          pr_number="$(gh pr list \
+          gh pr merge "$PR_NUMBER" \
             --repo "$GITHUB_REPOSITORY" \
-            --base develop \
-            --state open \
-            --json number,headRefName \
-            --jq '.[] | select(.headRefName | startswith("release-please--branches--develop--")) | .number' \
-            | head -n 1)"
-
-          if [ -z "$pr_number" ]; then
-            echo "No open Release Please PR targeting develop."
-            exit 0
-          fi
-
-          gh pr merge "$pr_number" \
-            --repo "$GITHUB_REPOSITORY" \
+            --auto \
             --squash \
             --delete-branch
