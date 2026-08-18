@@ -19,3 +19,25 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           target-branch: develop
+
+      - name: Enable auto-merge for release pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pr_number=$(gh pr list \
+            --repo "$GITHUB_REPOSITORY" \
+            --base develop \
+            --head release-please--branches--develop--components--harness-cli \
+            --state open \
+            --json number \
+            --jq '.[0].number')
+
+          if [ -n "$pr_number" ]; then
+            gh pr merge "$pr_number" \
+              --repo "$GITHUB_REPOSITORY" \
+              --auto \
+              --squash \
+              --delete-branch
+          else
+            echo "No open Release Please pull request found."
+          fi
