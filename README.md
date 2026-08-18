@@ -191,6 +191,11 @@ python eval_chat.py eval_scenarios/word_count/history.txt --scenario word_count
 Keep the two `HARNESS_*` assignments on the same command (or export them); a
 standalone assignment affects only that one shell command and does not persist.
 
+## License
+
+This project is licensed under the [MIT License](LICENSE). Copyright (c) 2026
+Joaquin Cubelli.
+
 ## Tests
 
 Run the unit test suite with the Python standard library:
