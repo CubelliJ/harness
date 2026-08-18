@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.17.0](https://github.com/CubelliJ/harness/compare/v0.16.4...v0.17.0) (2026-08-18)
+
+
+### Features
+
+* add OpenRouter model selector ([7402694](https://github.com/CubelliJ/harness/commit/74026944f4a58a9f71e15f5cb81a3cbff81139bc))
+* add OpenRouter model selector ([96f0a4c](https://github.com/CubelliJ/harness/commit/96f0a4c4a55076a0b0e3af40fe86dcbfb3e6c98e))
+
 ## [0.16.4](https://github.com/CubelliJ/harness/compare/v0.16.3...v0.16.4) (2026-08-18)
 
 
