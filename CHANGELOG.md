@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.16.0](https://github.com/CubelliJ/harness/compare/v0.15.0...v0.16.0) (2026-08-18)
+
+
+### Features
+
+* add pull request skill ([dd928a6](https://github.com/CubelliJ/harness/commit/dd928a6391f3f24c4809f435c45fefd3dc2e11fa))
+* add pull request workflow skill ([4bc0903](https://github.com/CubelliJ/harness/commit/4bc0903a3db7dd5d7cf5c638c31eaed2f8ca1feb))
+
+
+### Bug Fixes
+
+* compare work status against origin develop ([501306a](https://github.com/CubelliJ/harness/commit/501306a3587231305ca37f234e00f09c4b15d7a5))
+
 ## [0.15.0](https://github.com/CubelliJ/harness/compare/v0.14.0...v0.15.0) (2026-08-18)
 
 
