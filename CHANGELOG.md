@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.0](https://github.com/CubelliJ/harness/compare/v0.12.0...v0.13.0) (2026-08-18)
+
+
+### Features
+
+* show model context usage ([5892fd8](https://github.com/CubelliJ/harness/commit/5892fd8168ad7704e6b0139f5dc5d2b695f610fa))
+* show model context usage ([#18](https://github.com/CubelliJ/harness/issues/18)) ([6de9b76](https://github.com/CubelliJ/harness/commit/6de9b768e8544eca21cb9b3cfffedc3321afe50f))
+
 ## [0.12.0](https://github.com/CubelliJ/harness/compare/v0.11.0...v0.12.0) (2026-08-18)
 
 
