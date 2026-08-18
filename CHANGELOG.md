@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.0](https://github.com/CubelliJ/harness/compare/v0.11.0...v0.12.0) (2026-08-18)
+
+
+### Features
+
+* default confirmations to yes ([a3688f0](https://github.com/CubelliJ/harness/commit/a3688f0cb73217daa596b70fa4b5d326b6af60f2))
+* default confirmations to yes ([672f40a](https://github.com/CubelliJ/harness/commit/672f40ae2063c2abf579521e2f0e5ababa6bb024))
+
 ## [0.11.0](https://github.com/CubelliJ/harness/compare/v0.10.0...v0.11.0) (2026-08-18)
 
 
