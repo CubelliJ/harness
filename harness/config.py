@@ -10,8 +10,10 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
 OPENROUTER_MODEL = "openai/gpt-5.6-luna"
 REQUEST_TIMEOUT_S = 600
+MODEL_METADATA_TIMEOUT_S = 3
 
 
 def _read_dotenv(path: Path) -> dict[str, str]:

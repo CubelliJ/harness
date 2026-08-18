@@ -22,6 +22,7 @@ feature/* → develop → main
    ```
 6. The release PR updates `pyproject.toml`, which is the single authoritative version source, and updates the changelog and manifest. The release PR is automatically merged after its required checks pass.
 7. After the release PR is merged and `develop` contains the new version, open or merge a promotion PR from `develop` into `main`.
+8. Promotion PRs from `develop` into `main` must use a regular merge commit. Never squash-merge or rebase these promotion PRs, because preserving the branch history avoids future conflicts.
 
 Do not run Release Please from feature branches or treat `main` as the integration branch. Do not manually edit the version in `harness/__init__.py`; `harness.__version__` is derived from package metadata or `pyproject.toml`.
 

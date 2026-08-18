@@ -24,7 +24,11 @@ from harness.conversation import (
     tool_message,
     user_message,
 )
-from harness.llm import execute_llm_call, parse_tool_call
+from harness.llm import (
+    execute_llm_call,
+    get_model_context_length,
+    parse_tool_call,
+)
 from harness.registry import (
     execute_tool,
     format_tool_result_content,
@@ -65,6 +69,29 @@ _CTRL_C_SEQUENCES = ("\u001b[99;5u",)
 
 def _is_shift_enter(sequence: str) -> bool:
     return sequence in _SHIFT_ENTER_SEQUENCES
+
+
+def _format_tokens(value: Any) -> str:
+    try:
+        return f"{int(value):,}"
+    except (TypeError, ValueError):
+        return "?"
+
+
+def _context_bar(prompt_tokens: Optional[int], context_limit: Optional[int], width: int = 30) -> str:
+    if prompt_tokens is None:
+        return "[unknown]"
+    if not context_limit or context_limit < 1:
+        return f"[{prompt_tokens:,} tokens; limit unknown]"
+    ratio = min(1.0, max(0.0, prompt_tokens / context_limit))
+    filled = int(round(ratio * width))
+    return "[%s%s] %d%%" % ("#" * filled, "." * (width - filled), round(ratio * 100))
+
+
+def _print_context(prompt_tokens: Optional[int], context_limit: Optional[int]) -> None:
+    usage = _format_tokens(prompt_tokens)
+    limit = _format_tokens(context_limit) if context_limit else "unknown"
+    print(f"\033[90m▸ context {usage} / {limit} tokens {_context_bar(prompt_tokens, context_limit)}\033[0m")
 
 
 def _banner() -> None:
@@ -212,7 +239,7 @@ def _drain_pending_input() -> None:
     """Drop leftover keypresses so the next input() is not auto-answered.
 
     Voice mode reads Enter in cbreak as CR; many terminals also queue LF.
-    That LF would otherwise complete Run this command? [y/N] as a blank No.
+    That LF would otherwise complete a confirmation prompt unexpectedly.
     """
     if not sys.stdin.isatty():
         return
@@ -245,11 +272,11 @@ def _confirm_command(command: str) -> Tuple[bool, str]:
     _drain_pending_input()
     print("\n\033[33mProposed command:\033[0m %s" % command)
     try:
-        answer = input("Run this command? [y/N] ").strip().lower()
+        answer = input("Run this command? [Y/n] ").strip().lower()
     except (EOFError, KeyboardInterrupt):
         print()
         return False, ""
-    if answer in {"y", "yes"}:
+    if answer in {"", "y", "yes"}:
         return True, ""
     try:
         feedback = input("Feedback (optional): ").strip()
@@ -268,11 +295,11 @@ def _confirm_edit(result: Dict[str, Any]) -> Tuple[bool, str]:
         diff = _colorize_diff(result["diff"])
         print(diff, end="" if diff.endswith("\n") else "\n")
     try:
-        answer = input("Apply this edit? [y/N] ").strip().lower()
+        answer = input("Apply this edit? [Y/n] ").strip().lower()
     except (EOFError, KeyboardInterrupt):
         print()
         return False, ""
-    if answer in {"y", "yes"}:
+    if answer in {"", "y", "yes"}:
         return True, ""
     try:
         feedback = input("Feedback (optional): ").strip()
@@ -447,16 +474,21 @@ def run(initial_request: str = "") -> None:
     """Run the REPL, or process one request when initial_request is supplied."""
     _banner()
     session_auto_approve = config.auto_approve()
+    context_tokens: Optional[int] = None
+    context_limit = get_model_context_length()
     history_path = history_file_path()
     conversation = [system_message(get_full_system_prompt(config.workspace_root()))]
     save_conversation_history(history_path, conversation)
 
     def process(user_input: str) -> None:
-        nonlocal session_auto_approve
+        nonlocal session_auto_approve, context_tokens
         conversation.append(user_message(user_input))
         save_conversation_history(history_path, conversation)
         while True:
-            content, tool_calls = execute_llm_call(conversation)
+            content, tool_calls, usage = execute_llm_call(conversation)
+            raw_prompt_tokens = usage.get("prompt_tokens")
+            if isinstance(raw_prompt_tokens, int) and not isinstance(raw_prompt_tokens, bool):
+                context_tokens = raw_prompt_tokens
             if not tool_calls:
                 conversation.append(assistant_message(content))
                 save_conversation_history(history_path, conversation)
@@ -538,6 +570,9 @@ def run(initial_request: str = "") -> None:
             session_auto_approve = False
             print("\033[90m▸ auto-accept disabled for this session\033[0m")
             continue
+        if command == "/context":
+            _print_context(context_tokens, context_limit)
+            continue
         if command == "/voice":
             try:
                 _voice_loop(process)
@@ -548,7 +583,7 @@ def run(initial_request: str = "") -> None:
             print("\033[90m▸ voice mode is off\033[0m")
             continue
         if command in {"/help", "?"}:
-            print("Commands: /auto-accept, /auto-accept off, /voice, /quit")
+            print("Commands: /context, /auto-accept, /auto-accept off, /voice, /quit")
             continue
         if user_input.strip():
             try:
