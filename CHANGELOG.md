@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.14.0](https://github.com/CubelliJ/harness/compare/v0.13.1...v0.14.0) (2026-08-18)
+
+
+### Features
+
+* add lazy-loaded workspace skills ([ba0c1c5](https://github.com/CubelliJ/harness/commit/ba0c1c5af76325996989a6eda265b3a226d9f63a))
+* add lazy-loaded workspace skills ([11ca3af](https://github.com/CubelliJ/harness/commit/11ca3af16abf0e90b09b28232b115d0a04e25cef))
+
 ## [0.13.1](https://github.com/CubelliJ/harness/compare/v0.13.0...v0.13.1) (2026-08-18)
 
 
