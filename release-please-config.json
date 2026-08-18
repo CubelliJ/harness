@@ -1,19 +1,10 @@
 {
   "include-component-in-tag": false,
   "changelog-path": "CHANGELOG.md",
-  "extra-files": [
-    "harness/__init__.py"
-  ],
   "packages": {
     ".": {
       "package-name": "harness-cli",
-      "release-type": "python",
-      "extra-files": [
-        {
-          "type": "generic",
-          "path": "harness/__init__.py"
-        }
-      ]
+      "release-type": "python"
     }
   }
 }
