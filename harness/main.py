@@ -212,7 +212,7 @@ def _drain_pending_input() -> None:
     """Drop leftover keypresses so the next input() is not auto-answered.
 
     Voice mode reads Enter in cbreak as CR; many terminals also queue LF.
-    That LF would otherwise complete Run this command? [y/N] as a blank No.
+    That LF would otherwise complete a confirmation prompt unexpectedly.
     """
     if not sys.stdin.isatty():
         return
@@ -245,11 +245,11 @@ def _confirm_command(command: str) -> Tuple[bool, str]:
     _drain_pending_input()
     print("\n\033[33mProposed command:\033[0m %s" % command)
     try:
-        answer = input("Run this command? [y/N] ").strip().lower()
+        answer = input("Run this command? [Y/n] ").strip().lower()
     except (EOFError, KeyboardInterrupt):
         print()
         return False, ""
-    if answer in {"y", "yes"}:
+    if answer in {"", "y", "yes"}:
         return True, ""
     try:
         feedback = input("Feedback (optional): ").strip()
@@ -268,11 +268,11 @@ def _confirm_edit(result: Dict[str, Any]) -> Tuple[bool, str]:
         diff = _colorize_diff(result["diff"])
         print(diff, end="" if diff.endswith("\n") else "\n")
     try:
-        answer = input("Apply this edit? [y/N] ").strip().lower()
+        answer = input("Apply this edit? [Y/n] ").strip().lower()
     except (EOFError, KeyboardInterrupt):
         print()
         return False, ""
-    if answer in {"y", "yes"}:
+    if answer in {"", "y", "yes"}:
         return True, ""
     try:
         feedback = input("Feedback (optional): ").strip()

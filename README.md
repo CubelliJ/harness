@@ -64,10 +64,11 @@ newline without submitting (in terminals that report modified keys), and press
 Enter to submit. Ctrl+C to exit. Bracketed paste also preserves newlines.
 
 During a session, use `/auto-accept` to approve all subsequent file edits without
-prompting. Shell commands always require explicit human approval; `/auto-accept`
-does not bypass command confirmations. Use `/auto-accept off` to restore edit
-confirmations. On macOS, `/voice` starts speech input (Enter submits, Escape
-exits). `/quit` exits and `/help` lists session commands.
+prompting. Shell commands require confirmation; confirmations default to Yes, so
+pressing Enter runs the command or applies the edit. Type `n` to reject it.
+`/auto-accept` does not bypass command confirmations. Use `/auto-accept off` to
+restore edit confirmations. On macOS, `/voice` starts speech input (Enter
+submits, Escape exits). `/quit` exits and `/help` lists session commands.
 
 Session transcripts land in `~/harness_logs/` by default.
 
