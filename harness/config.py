@@ -104,6 +104,14 @@ def get_model() -> str:
     return os.environ.get("OPENROUTER_MODEL", OPENROUTER_MODEL).strip() or OPENROUTER_MODEL
 
 
+def set_model(model: str) -> None:
+    """Select a model for the current Harness process."""
+    value = model.strip()
+    if not value:
+        raise ValueError("model id cannot be empty")
+    os.environ["OPENROUTER_MODEL"] = value
+
+
 def history_file_path() -> Path:
     custom = os.environ.get("HARNESS_HISTORY_FILE")
     if custom:

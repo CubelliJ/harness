@@ -24,15 +24,32 @@ MAX_RETRIES = 5
 RETRY_BASE_S = 2.0
 
 
+def _models_response() -> Dict[str, Any]:
+    """Fetch the model catalogue from OpenRouter."""
+    with urllib.request.urlopen(
+        urllib.request.Request(OPENROUTER_MODELS_URL, headers=_headers()),
+        timeout=MODEL_METADATA_TIMEOUT_S,
+    ) as response:
+        body = json.loads(response.read().decode("utf-8"))
+    if not isinstance(body, dict):
+        raise ValueError("OpenRouter models response is not an object")
+    return body
+
+
+def get_available_models() -> List[Dict[str, Any]]:
+    """Return usable model records from OpenRouter's model catalogue."""
+    body = _models_response()
+    models = []
+    for model in body.get("data") or []:
+        if isinstance(model, dict) and isinstance(model.get("id"), str) and model["id"].strip():
+            models.append(model)
+    return sorted(models, key=lambda model: (model.get("name") or model["id"]).lower())
+
+
 def get_model_context_length() -> Optional[int]:
     """Return the provider-reported context limit for the configured model."""
     try:
-        with urllib.request.urlopen(
-            urllib.request.Request(OPENROUTER_MODELS_URL, headers=_headers()),
-            timeout=MODEL_METADATA_TIMEOUT_S,
-        ) as response:
-            body = json.loads(response.read().decode("utf-8"))
-        return model_context_length(body, get_model())
+        return model_context_length(_models_response(), get_model())
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
         logger.warning("Could not retrieve model context length: %s", exc)
     return None

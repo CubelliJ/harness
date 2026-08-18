@@ -1,6 +1,7 @@
 import unittest
+from unittest.mock import patch
 
-from harness.llm import _is_rate_limited, model_context_length, parse_tool_call
+from harness.llm import _is_rate_limited, get_available_models, model_context_length, parse_tool_call
 
 
 class LlmTestCase(unittest.TestCase):
@@ -29,6 +30,16 @@ class LlmTestCase(unittest.TestCase):
         body = {"data": [{"id": "model-a", "context_length": 128000}]}
         self.assertEqual(model_context_length(body, "model-a"), 128000)
         self.assertIsNone(model_context_length(body, "missing"))
+
+    @patch("harness.llm._models_response")
+    def test_available_models_filters_and_sorts(self, response):
+        response.return_value = {"data": [
+            {"id": "z/model", "name": "Zed"},
+            {"id": "a/model", "name": "Alpha"},
+            {"id": "ignored", "name": ""},
+            {"name": "missing id"},
+        ]}
+        self.assertEqual([m["id"] for m in get_available_models()], ["a/model", "ignored", "z/model"])
 
     def test_is_rate_limited(self):
         self.assertTrue(_is_rate_limited(RuntimeError("OpenRouter error: {'code': 429}")))
