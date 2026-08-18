@@ -48,11 +48,13 @@ feature/* → develop → main
    release-please--branches--develop--components--harness-cli → develop
    ```
 
-3. The release PR updates `pyproject.toml`, which is the single authoritative
-   version source, and updates the changelog and manifest. The release PR is
-   automatically merged after its required checks pass.
-4. After the release PR is merged and `develop` contains the new version, open
-   or merge a promotion PR from `develop` into `main`.
+3. The release PR updates `pyproject.toml` (the single authoritative version),
+   `CHANGELOG.md`, and `.release-please-manifest.json`. The same workflow
+   squash-merges that PR and then creates the `vX.Y.Z` tag and GitHub Release.
+   `harness.__version__` reads package metadata or `pyproject.toml`, so it
+   stays in sync. Do not edit those version files by hand.
+4. After `develop` contains the new version, open or merge a promotion PR from
+   `develop` into `main`.
 5. Promotion PRs from `develop` into `main` must use a regular merge commit.
    Never squash-merge or rebase promotion PRs; preserving branch history avoids
    future conflicts.

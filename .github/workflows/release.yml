@@ -3,6 +3,7 @@ name: Release
 on:
   push:
     branches: [develop]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -12,12 +13,32 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - name: Create or update release pull request
+      - name: Open or update the release pull request
+        id: release-pr
         uses: googleapis/release-please-action@v4
         with:
-          # A repository GITHUB_TOKEN cannot trigger the follow-up push workflow
-          # after the release PR is merged. Use a PAT or GitHub App token instead.
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           target-branch: develop
+
+      # Merge in this same job, then tag below. Do not rely on a follow-up
+      # push workflow: GitHub suppresses events from GITHUB_TOKEN merges, so
+      # a separate auto-merge never creates the tag.
+      - name: Merge the release pull request
+        if: ${{ steps.release-pr.outputs.pr }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.release-pr.outputs.pr && fromJSON(steps.release-pr.outputs.pr).number || '' }}
+        run: |
+          gh pr merge "$PR_NUMBER" \
+            --repo "$GITHUB_REPOSITORY" \
+            --squash \
+            --delete-branch
+
+      - name: Create the version tag and GitHub Release
+        uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          target-branch: develop
+          skip-github-pull-request: true
