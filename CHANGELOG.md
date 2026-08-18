@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.0](https://github.com/CubelliJ/harness/compare/v0.14.0...v0.15.0) (2026-08-18)
+
+
+### Features
+
+* add MIT license ([ce8d9f0](https://github.com/CubelliJ/harness/commit/ce8d9f0e7cda4534340166ee54de306ecd70cb66))
+* add MIT license ([7c22942](https://github.com/CubelliJ/harness/commit/7c229429d8a37d1c14d4ef1c9e947bb0a02ff050))
+
 ## [0.14.0](https://github.com/CubelliJ/harness/compare/v0.13.1...v0.14.0) (2026-08-18)
 
 
