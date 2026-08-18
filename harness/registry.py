@@ -1,7 +1,8 @@
 """Tool schemas, execution, and result formatting."""
 
 import json
-from typing import Any, Dict, List
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from harness.tools import TOOL_REGISTRY
 
@@ -104,8 +105,18 @@ OPENAI_TOOLS: List[Dict[str, Any]] = [
 ]
 
 
-def get_full_system_prompt() -> str:
-    return SYSTEM_PROMPT
+def get_full_system_prompt(workspace: Optional[Path] = None) -> str:
+    """Return built-in guidance plus workspace-specific AGENTS.md instructions."""
+    if workspace is None:
+        return SYSTEM_PROMPT
+    agents_file = workspace / "AGENTS.md"
+    try:
+        instructions = agents_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        instructions = ""
+    if not instructions:
+        return SYSTEM_PROMPT
+    return f"{SYSTEM_PROMPT}\n\nWorkspace instructions from {agents_file}:\n{instructions}"
 
 
 def execute_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:

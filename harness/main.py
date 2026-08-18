@@ -448,7 +448,7 @@ def run(initial_request: str = "") -> None:
     _banner()
     session_auto_approve = config.auto_approve()
     history_path = history_file_path()
-    conversation = [system_message(get_full_system_prompt())]
+    conversation = [system_message(get_full_system_prompt(config.workspace_root()))]
     save_conversation_history(history_path, conversation)
 
     def process(user_input: str) -> None:
