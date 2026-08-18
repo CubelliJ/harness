@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.16.1](https://github.com/CubelliJ/harness/compare/v0.16.0...v0.16.1) (2026-08-18)
+
+
+### Bug Fixes
+
+* ensure release tags are created after auto-merge ([fbf4e59](https://github.com/CubelliJ/harness/commit/fbf4e59064be886feaecc021a3c337d10f8a6e4a))
+* ensure release tags are created after auto-merge ([bfb9a4c](https://github.com/CubelliJ/harness/commit/bfb9a4ccc2eaef531e6cf0fc77912b5a232402b4))
+
 ## [0.16.0](https://github.com/CubelliJ/harness/compare/v0.15.0...v0.16.0) (2026-08-18)
 
 
