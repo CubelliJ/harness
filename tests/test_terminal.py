@@ -1,6 +1,15 @@
 import unittest
 
+from harness.main import _context_bar
 from harness.terminal import render_markdown
+
+
+class ContextBarTests(unittest.TestCase):
+    def test_context_bar_reports_percentage(self):
+        self.assertEqual(_context_bar(25, 100, width=10), "[##........] 25%")
+
+    def test_context_bar_handles_unknown_limit(self):
+        self.assertEqual(_context_bar(25, None), "[25 tokens; limit unknown]")
 
 
 class TerminalMarkdownTests(unittest.TestCase):
