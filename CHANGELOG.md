@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.16.4](https://github.com/CubelliJ/harness/compare/v0.16.3...v0.16.4) (2026-08-18)
+
+
+### Documentation
+
+* simplify readme and split documentation ([ac7837b](https://github.com/CubelliJ/harness/commit/ac7837b7e5c8b0527687dc09073ff5dc57fe65d8))
+* simplify readme and split documentation ([cf214d5](https://github.com/CubelliJ/harness/commit/cf214d5d163687d4820d3d59db1f8aac7402e268))
+
 ## [0.16.3](https://github.com/CubelliJ/harness/compare/v0.16.2...v0.16.3) (2026-08-18)
 
 
