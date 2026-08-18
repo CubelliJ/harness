@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.16.3](https://github.com/CubelliJ/harness/compare/v0.16.2...v0.16.3) (2026-08-18)
+
+
+### Bug Fixes
+
+* harden public GitHub Actions and reporting ([a2e836b](https://github.com/CubelliJ/harness/commit/a2e836b6c4c5152e17a12e826aa5ca2708bec39c))
+* harden public GitHub Actions and reporting ([37f91ec](https://github.com/CubelliJ/harness/commit/37f91ec69c3f23551365b467545d9784f49bfca3))
+
 ## [0.16.2](https://github.com/CubelliJ/harness/compare/v0.16.1...v0.16.2) (2026-08-18)
 
 
