@@ -4,10 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "harness-cli"
-version = "0.13.1"
+version = "0.16.0"
 description = "CLI coding agent"
 readme = "README.md"
 requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [{name = "Joaquin Cubelli"}]
 dependencies = []
 
 [project.scripts]

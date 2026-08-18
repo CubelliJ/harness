@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.16.0](https://github.com/CubelliJ/harness/compare/v0.15.0...v0.16.0) (2026-08-18)
+
+
+### Features
+
+* add pull request skill ([dd928a6](https://github.com/CubelliJ/harness/commit/dd928a6391f3f24c4809f435c45fefd3dc2e11fa))
+* add pull request workflow skill ([4bc0903](https://github.com/CubelliJ/harness/commit/4bc0903a3db7dd5d7cf5c638c31eaed2f8ca1feb))
+
+
+### Bug Fixes
+
+* compare work status against origin develop ([501306a](https://github.com/CubelliJ/harness/commit/501306a3587231305ca37f234e00f09c4b15d7a5))
+
+## [0.15.0](https://github.com/CubelliJ/harness/compare/v0.14.0...v0.15.0) (2026-08-18)
+
+
+### Features
+
+* add MIT license ([ce8d9f0](https://github.com/CubelliJ/harness/commit/ce8d9f0e7cda4534340166ee54de306ecd70cb66))
+* add MIT license ([7c22942](https://github.com/CubelliJ/harness/commit/7c229429d8a37d1c14d4ef1c9e947bb0a02ff050))
+
+## [0.14.0](https://github.com/CubelliJ/harness/compare/v0.13.1...v0.14.0) (2026-08-18)
+
+
+### Features
+
+* add lazy-loaded workspace skills ([ba0c1c5](https://github.com/CubelliJ/harness/commit/ba0c1c5af76325996989a6eda265b3a226d9f63a))
+* add lazy-loaded workspace skills ([11ca3af](https://github.com/CubelliJ/harness/commit/11ca3af16abf0e90b09b28232b115d0a04e25cef))
+
 ## [0.13.1](https://github.com/CubelliJ/harness/compare/v0.13.0...v0.13.1) (2026-08-18)
 
 
