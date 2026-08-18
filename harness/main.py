@@ -26,6 +26,7 @@ from harness.conversation import (
 )
 from harness.llm import (
     execute_llm_call,
+    get_available_models,
     get_model_context_length,
     parse_tool_call,
 )
@@ -92,6 +93,42 @@ def _print_context(prompt_tokens: Optional[int], context_limit: Optional[int]) -
     usage = _format_tokens(prompt_tokens)
     limit = _format_tokens(context_limit) if context_limit else "unknown"
     print(f"\033[90m▸ context {usage} / {limit} tokens {_context_bar(prompt_tokens, context_limit)}\033[0m")
+
+
+def _format_model_context(model: Dict[str, Any]) -> str:
+    context = model.get("context_length")
+    return f"{int(context):,}" if context is not None else "?"
+
+
+def _select_model(argument: str = "") -> Optional[str]:
+    """List models or select one by number/id for the current session."""
+    try:
+        models = get_available_models()
+    except (OSError, RuntimeError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        print(f"\033[91m▸ model catalogue unavailable: {exc}\033[0m")
+        return None
+    if not models:
+        print("\033[90m▸ OpenRouter returned no models\033[0m")
+        return None
+    if argument:
+        selected = None
+        if argument.isdigit() and 1 <= int(argument) <= len(models):
+            selected = models[int(argument) - 1]
+        else:
+            selected = next((m for m in models if m["id"].lower() == argument.lower()), None)
+        if selected is None:
+            print("\033[90m▸ enter a model number or exact model id from /model\033[0m")
+            return None
+        config.set_model(selected["id"])
+        print(f"\033[90m▸ model switched to {selected['id']}\033[0m")
+        return selected["id"]
+
+    print("\033[36mAvailable OpenRouter models:\033[0m")
+    for index, model in enumerate(models, 1):
+        name = model.get("name") or model["id"]
+        print(f"  {index:>3}. {name}  \033[90m{model['id']} · {_format_model_context(model)} tokens\033[0m")
+    print("\033[90mUse /model <number> or /model <provider/model-id>\033[0m")
+    return None
 
 
 def _banner() -> None:
@@ -573,6 +610,13 @@ def run(initial_request: str = "") -> None:
         if command == "/context":
             _print_context(context_tokens, context_limit)
             continue
+        if command == "/model" or command.startswith("/model "):
+            selected_model = _select_model(user_input.strip()[len("/model"):].strip())
+            if selected_model:
+                context_tokens = None
+                context_limit = get_model_context_length()
+                print(f"\033[90m▸ context limit refreshed: {_format_tokens(context_limit)} tokens\033[0m")
+            continue
         if command == "/voice":
             try:
                 _voice_loop(process)
@@ -583,7 +627,7 @@ def run(initial_request: str = "") -> None:
             print("\033[90m▸ voice mode is off\033[0m")
             continue
         if command in {"/help", "?"}:
-            print("Commands: /context, /auto-accept, /auto-accept off, /voice, /quit")
+            print("Commands: /model, /model <number|id>, /context, /auto-accept, /auto-accept off, /voice, /quit")
             continue
         if user_input.strip():
             try:

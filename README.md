@@ -32,6 +32,8 @@ commands.
 Useful commands:
 
 - `/help` — show available commands
+- `/model` — list available OpenRouter models with context windows
+- `/model <number|provider/model-id>` — switch models for the session
 - `/context` — show model context usage
 - `/auto-accept` — approve future file edits automatically
 - `/voice` — use voice input on macOS
