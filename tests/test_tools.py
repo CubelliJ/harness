@@ -5,7 +5,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from harness import tools
-from harness.registry import get_full_system_prompt
+from harness.registry import execute_tool, format_tool_result_content, get_full_system_prompt
+from harness.skills import load_skill, parse_skill_references, skill_catalog
 
 
 class ToolsTestCase(unittest.TestCase):
@@ -33,6 +34,55 @@ class ToolsTestCase(unittest.TestCase):
 
     def test_system_prompt_ignores_missing_agents_file(self):
         self.assertEqual(get_full_system_prompt(self.workspace), get_full_system_prompt())
+
+    def test_skill_references_are_parsed_without_loading_contents(self):
+        references = parse_skill_references(
+            "[Testing](.harness/skills/testing.md) [External](https://example.com/a.md) "
+            "[Testing again](.harness/skills/testing.md#section)"
+        )
+        self.assertEqual([(item.name, item.path) for item in references], [
+            ("Testing", ".harness/skills/testing.md"),
+        ])
+
+    def test_system_prompt_contains_skill_catalog_not_skill_contents(self):
+        (self.workspace / "AGENTS.md").write_text(
+            "Use skills: [Testing](skills/testing.md)", encoding="utf-8"
+        )
+        skills = self.workspace / "skills"
+        skills.mkdir()
+        (skills / "testing.md").write_text("secret testing instructions", encoding="utf-8")
+        prompt = get_full_system_prompt(self.workspace)
+        self.assertIn("Testing: skills/testing.md", prompt)
+        self.assertNotIn("secret testing instructions", prompt)
+
+    def test_load_skill_requires_active_reference_and_loads_by_name(self):
+        (self.workspace / "AGENTS.md").write_text(
+            "[Testing](skills/testing.md)", encoding="utf-8"
+        )
+        skills = self.workspace / "skills"
+        skills.mkdir()
+        (skills / "testing.md").write_text("run the tests", encoding="utf-8")
+        result = load_skill("Testing", self.workspace)
+        self.assertEqual(result["content"], "run the tests")
+        self.assertIn("run the tests", format_tool_result_content("load_skill", result))
+        self.assertIn("Missing required", execute_tool("load_skill", {}).get("error", ""))
+        self.assertIn("not declared", load_skill("Other", self.workspace)["error"])
+
+    def test_load_skill_rejects_external_symlink(self):
+        outside = Path(tempfile.mkdtemp())
+        try:
+            (outside / "secret.md").write_text("secret", encoding="utf-8")
+            skills = self.workspace / "skills"
+            skills.mkdir()
+            (skills / "secret.md").symlink_to(outside / "secret.md")
+            (self.workspace / "AGENTS.md").write_text(
+                "[Secret](skills/secret.md)", encoding="utf-8"
+            )
+            result = load_skill("Secret", self.workspace)
+            self.assertIn("escapes", result["error"])
+        finally:
+            (outside / "secret.md").unlink()
+            outside.rmdir()
 
     def test_resolve_abs_path_rejects_traversal(self):
         with self.assertRaises(ValueError):

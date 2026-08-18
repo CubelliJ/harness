@@ -95,11 +95,30 @@ The model can call:
 
 | Tool | Purpose |
 |------|---------|
+| `load_skill` | Load a relevant skill explicitly linked from `AGENTS.md` |
 | `read_file` | Read a file |
 | `list_files` | List a directory |
 | `search_files` | Recursively search text files, honoring `.gitignore` |
 | `run_command` | Run a workspace shell command, such as tests or a formatter |
 | `edit_file` | Propose and edit a file (empty `old_str` creates/overwrites) |
+
+### Skills
+
+Projects can declare reusable, lazy-loaded instructions in `AGENTS.md` using
+Markdown links. Harness includes only the names and paths in the system prompt;
+the agent loads relevant content with `load_skill` when needed.
+
+```markdown
+## Available skills
+
+- [Testing](.harness/skills/testing.md)
+- [Release process](.harness/skills/release.md)
+```
+
+Only skills explicitly linked from the workspace `AGENTS.md` can be loaded.
+Skill paths must remain inside the workspace, and skill files are limited to
+256 KiB. Missing or invalid links appear in the catalog and return an error if
+loaded.
 
 Edits are shown as a unified diff and require confirmation by default. If you
 reject an edit, you can provide feedback and the model will receive it. Existing

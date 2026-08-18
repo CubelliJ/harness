@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from harness.skills import load_skill, skill_catalog
 from harness.tools import TOOL_REGISTRY
 
 SYSTEM_PROMPT = """
@@ -12,11 +13,29 @@ Use tools to inspect, edit, and test files. After meaningful edits, use run_comm
 when appropriate to run focused tests or validation. Prefer harness/*.py and README.md.
 Do not claim tools are unavailable — call them.
 Before every run_command call, briefly explain what you will run and why in at most two lines.
+When a relevant workspace skill is listed, load it with load_skill before relying on it.
 Be brief on the answers.
 """.strip()
 
 # OpenAI/OpenRouter function-calling schemas
 OPENAI_TOOLS: List[Dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "load_skill",
+            "description": "Load a relevant skill explicitly linked from AGENTS.md.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "skill": {
+                        "type": "string",
+                        "description": "Skill name or relative path from the available skills catalog",
+                    }
+                },
+                "required": ["skill"],
+            },
+        },
+    },
     {
         "type": "function",
         "function": {
@@ -116,7 +135,9 @@ def get_full_system_prompt(workspace: Optional[Path] = None) -> str:
         instructions = ""
     if not instructions:
         return SYSTEM_PROMPT
-    return f"{SYSTEM_PROMPT}\n\nWorkspace instructions from {agents_file}:\n{instructions}"
+    prompt = f"{SYSTEM_PROMPT}\n\nWorkspace instructions from {agents_file}:\n{instructions}"
+    catalog = skill_catalog(workspace)
+    return f"{prompt}\n\n{catalog}" if catalog else prompt
 
 
 def execute_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -125,12 +146,13 @@ def execute_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
     Required fields are checked here rather than relying on ``dict.get``
     defaults. This keeps malformed calls from turning into filesystem actions.
     """
-    tool = TOOL_REGISTRY.get(tool_name)
+    tool = load_skill if tool_name == "load_skill" else TOOL_REGISTRY.get(tool_name)
     if not tool:
         return {"error": f"Unknown tool: {tool_name}"}
     if not isinstance(args, dict):
         return {"error": "Tool arguments must be an object"}
     required = {
+        "load_skill": ("skill",),
         "read_file": ("filename",),
         "run_command": ("command",),
         "search_files": ("query",),
@@ -140,6 +162,8 @@ def execute_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
     if missing:
         return {"error": f"Missing required argument(s): {', '.join(missing)}"}
     try:
+        if tool_name == "load_skill":
+            return load_skill(args["skill"])
         if tool_name == "read_file":
             return tool(args["filename"])
         if tool_name == "run_command":
@@ -165,6 +189,13 @@ def format_tool_result_content(tool_name: str, result: Dict[str, Any]) -> str:
     """Plain text/JSON content for a role=tool message."""
     if result.get("error"):
         return json.dumps({"error": result["error"]}, ensure_ascii=False)
+    if tool_name == "load_skill":
+        return (
+            f"skill={result.get('name', '')} path={result.get('path', '')}\n"
+            "---- SKILL START ----\n"
+            f"{result.get('content', '')}\n"
+            "---- SKILL END ----"
+        )
     if tool_name == "read_file":
         return (
             f"file_path={result.get('file_path', '')}\n"
