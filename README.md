@@ -42,7 +42,11 @@ Useful commands:
 - `/image <path> [path ...]` — attach screenshots/images to the next request
 - `/quit` — exit Harness
 
-Images can also be attached non-interactively with repeatable options:
+Paste or drag an image file into the terminal input and submit normally;
+Harness detects the image path automatically and sends it with that request. The
+`/image <path> [path ...]` command remains available for attaching an image
+before writing the request. Images can also be attached non-interactively with
+repeatable options:
 
 ```bash
 harness --request "Describe this screenshot" --image ./screenshot.png

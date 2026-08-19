@@ -99,6 +99,32 @@ def _image_part(path_text: str) -> Dict[str, Any]:
     return {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{encoded}"}}
 
 
+def _extract_pasted_images(user_input: str) -> Tuple[str, list[Dict[str, Any]]]:
+    """Extract existing image paths pasted or dragged into the terminal.
+
+    Terminal drag-and-drop usually inserts a shell-escaped path. ``shlex``
+    handles both that form and quoted paths with spaces while leaving ordinary
+    prose untouched.
+    """
+    try:
+        tokens = shlex.split(user_input)
+    except ValueError:
+        return user_input, []
+
+    image_tokens = []
+    text_tokens = []
+    for token in tokens:
+        path = Path(token).expanduser()
+        if path.suffix.lower() in _IMAGE_EXTENSIONS and path.is_file():
+            image_tokens.append(token)
+        else:
+            text_tokens.append(token)
+    if not image_tokens:
+        return user_input, []
+    text = " ".join(text_tokens).strip()
+    return text or "Please inspect the attached image.", [_image_part(path) for path in image_tokens]
+
+
 def _is_shift_enter(sequence: str) -> bool:
     return sequence in _SHIFT_ENTER_SEQUENCES
 
@@ -784,8 +810,9 @@ def run(
 
     if initial_request:
         try:
-            process(initial_request, pending_images)
-        except RuntimeError as e:
+            initial_request, pasted_images = _extract_pasted_images(initial_request)
+            process(initial_request, pending_images + pasted_images)
+        except (RuntimeError, OSError, ValueError) as e:
             print(f"\033[91m▸ error: {e}\033[0m")
         return
 
@@ -850,10 +877,11 @@ def run(
             continue
         if user_input.strip():
             try:
-                images = pending_images
+                user_input, pasted_images = _extract_pasted_images(user_input)
+                images = pending_images + pasted_images
                 pending_images = []
                 process(user_input, images)
-            except RuntimeError as e:
+            except (RuntimeError, OSError, ValueError) as e:
                 print(f"\033[91m▸ error: {e}\033[0m")
 
 

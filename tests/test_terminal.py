@@ -1,10 +1,23 @@
+import tempfile
 import unittest
+from pathlib import Path
 
-from harness.main import _context_bar
+from harness.main import _context_bar, _extract_pasted_images
 from harness.terminal import render_markdown
 
 
 class ContextBarTests(unittest.TestCase):
+    def test_extracts_shell_escaped_dropped_image_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "Screenshot 2026.png"
+            path.write_bytes(b"png")
+            text, images = _extract_pasted_images(
+                "please inspect " + str(path).replace(" ", "\\ ")
+            )
+            self.assertEqual(text, "please inspect")
+            self.assertEqual(len(images), 1)
+            self.assertTrue(images[0]["image_url"]["url"].startswith("data:image/png;base64,"))
+
     def test_context_bar_reports_percentage(self):
         self.assertEqual(_context_bar(25, 100, width=10), "[##........] 25%")
 
