@@ -14,6 +14,8 @@ OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
 OPENROUTER_MODEL = "openai/gpt-5.6-luna"
 REQUEST_TIMEOUT_S = 600
 MODEL_METADATA_TIMEOUT_S = 3
+CONTEXT_COMPACTION_RATIO = 0.25
+CONTEXT_COMPACTION_CAP = 250_000
 
 
 def _read_dotenv(path: Path) -> dict[str, str]:
@@ -102,6 +104,14 @@ def workspace_root() -> Path:
 
 def get_model() -> str:
     return os.environ.get("OPENROUTER_MODEL", OPENROUTER_MODEL).strip() or OPENROUTER_MODEL
+
+
+def set_model(model: str) -> None:
+    """Select a model for the current Harness process."""
+    value = model.strip()
+    if not value:
+        raise ValueError("model id cannot be empty")
+    os.environ["OPENROUTER_MODEL"] = value
 
 
 def history_file_path() -> Path:

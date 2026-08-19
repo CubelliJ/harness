@@ -121,6 +121,28 @@ OPENAI_TOOLS: List[Dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function", "function": {"name": "git_status",
+        "description": "Show concise Git working-tree status (read-only).",
+        "parameters": {"type": "object", "properties": {}}}},
+    {
+        "type": "function", "function": {"name": "git_diff",
+        "description": "Inspect unstaged or staged Git diff (read-only).",
+        "parameters": {"type": "object", "properties": {
+            "staged": {"type": "boolean", "default": False},
+            "path": {"type": "string", "description": "Optional workspace-relative path"},
+        }}}},
+    {
+        "type": "function", "function": {"name": "git_log",
+        "description": "Show recent Git commits, optionally for one workspace path (read-only).",
+        "parameters": {"type": "object", "properties": {
+            "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
+            "path": {"type": "string", "description": "Optional workspace-relative path"},
+        }}}},
+    {
+        "type": "function", "function": {"name": "git_branch_list",
+        "description": "List local and remote Git branches (read-only).",
+        "parameters": {"type": "object", "properties": {}}}},
 ]
 
 
@@ -180,6 +202,12 @@ def execute_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
             # exposed in the model-facing schema.
             return tool(args["path"], args["old_str"], args["new_str"],
                         apply=args.get("apply", True))
+        if tool_name == "git_diff":
+            return tool(args.get("staged", False), args.get("path", ""))
+        if tool_name == "git_log":
+            return tool(args.get("limit", 20), args.get("path", ""))
+        if tool_name in {"git_status", "git_branch_list"}:
+            return tool()
     except Exception as e:
         return {"error": f"{type(e).__name__}: {e}"}
     return {"error": "Unhandled tool"}

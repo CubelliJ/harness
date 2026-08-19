@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.20.0](https://github.com/CubelliJ/harness/compare/v0.19.0...v0.20.0) (2026-08-19)
+
+
+### Features
+
+* add native read-only git tools ([f40fa75](https://github.com/CubelliJ/harness/commit/f40fa755065db1499db53228d35a23d9dae1dd46))
+* add native read-only git tools ([f28567c](https://github.com/CubelliJ/harness/commit/f28567ca161bf607a9bdc7f34bb904ba67a59288))
+
+## [0.19.0](https://github.com/CubelliJ/harness/compare/v0.18.0...v0.19.0) (2026-08-19)
+
+
+### Features
+
+* add session persistence and resume support ([583a55a](https://github.com/CubelliJ/harness/commit/583a55af47dfa4c22b6e666ecf0458d821ab44f1))
+
+## [0.18.0](https://github.com/CubelliJ/harness/compare/v0.17.0...v0.18.0) (2026-08-19)
+
+
+### Features
+
+* add conversation compaction controls ([8197948](https://github.com/CubelliJ/harness/commit/8197948ec51a7e9a178f72be53e79ebb2e712f5f))
+* add conversation compaction controls ([c646f79](https://github.com/CubelliJ/harness/commit/c646f79740da608f10755a2102d82b9c7a89a473))
+
+## [0.17.0](https://github.com/CubelliJ/harness/compare/v0.16.4...v0.17.0) (2026-08-18)
+
+
+### Features
+
+* add OpenRouter model selector ([7402694](https://github.com/CubelliJ/harness/commit/74026944f4a58a9f71e15f5cb81a3cbff81139bc))
+* add OpenRouter model selector ([96f0a4c](https://github.com/CubelliJ/harness/commit/96f0a4c4a55076a0b0e3af40fe86dcbfb3e6c98e))
+
+## [0.16.4](https://github.com/CubelliJ/harness/compare/v0.16.3...v0.16.4) (2026-08-18)
+
+
+### Documentation
+
+* simplify readme and split documentation ([ac7837b](https://github.com/CubelliJ/harness/commit/ac7837b7e5c8b0527687dc09073ff5dc57fe65d8))
+* simplify readme and split documentation ([cf214d5](https://github.com/CubelliJ/harness/commit/cf214d5d163687d4820d3d59db1f8aac7402e268))
+
 ## [0.16.3](https://github.com/CubelliJ/harness/compare/v0.16.2...v0.16.3) (2026-08-18)
 
 

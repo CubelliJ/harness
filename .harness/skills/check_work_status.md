@@ -3,6 +3,18 @@
 Use this workflow when asked what has been worked on, what is currently in
 progress, or what changed in the repository.
 
+## Native Git inspection
+
+Prefer Harness's automatic read-only Git tools when available:
+
+- `git_status` for concise working-tree and branch status
+- `git_diff` for unstaged or staged diffs (`staged=true`)
+- `git_log` for recent commits
+- `git_branch_list` for local and remote branches
+
+Use confirmed `run_command` for Git mutations such as staging, restoring,
+committing, pushing, merging, tagging, or opening releases/PRs.
+
 1. Check the working tree and current branch:
 
    ```bash

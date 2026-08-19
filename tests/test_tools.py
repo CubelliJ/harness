@@ -146,6 +146,77 @@ class ToolsTestCase(unittest.TestCase):
         self.assertEqual(result["returncode"], 0)
         self.assertIn("ok", result["stdout"])
 
+    def test_git_status_and_diff_are_native_and_workspace_scoped(self):
+        tools.run_command("git init -q && git config user.email test@example.com && git config user.name Test")
+        path = self.workspace / "tracked.txt"
+        path.write_text("before\n", encoding="utf-8")
+        tools.run_command("git add tracked.txt && git commit -qm initial")
+        path.write_text("after\n", encoding="utf-8")
+        status = tools.git_status()
+        self.assertTrue(status["passed"])
+        self.assertIn("tracked.txt", status["stdout"])
+        diff = tools.git_diff(path="tracked.txt")
+        self.assertTrue(diff["passed"])
+        self.assertIn("+after", diff["stdout"])
+
+    def test_git_diff_reads_staged_changes_and_filters_by_path(self):
+        tools.run_command("git init -q && git config user.email test@example.com && git config user.name Test")
+        staged = self.workspace / "staged.txt"
+        unstaged = self.workspace / "unstaged.txt"
+        staged.write_text("before\n", encoding="utf-8")
+        unstaged.write_text("before\n", encoding="utf-8")
+        tools.run_command("git add staged.txt unstaged.txt && git commit -qm initial")
+        staged.write_text("staged change\n", encoding="utf-8")
+        unstaged.write_text("unstaged change\n", encoding="utf-8")
+        tools.run_command("git add staged.txt")
+
+        result = tools.git_diff(staged=True)
+        self.assertTrue(result["passed"])
+        self.assertIn("staged change", result["stdout"])
+        self.assertNotIn("unstaged change", result["stdout"])
+
+        result = tools.git_diff(staged=True, path="staged.txt")
+        self.assertTrue(result["passed"])
+        self.assertIn("staged change", result["stdout"])
+
+        result = tools.git_diff(staged=True, path="unstaged.txt")
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["stdout"], "")
+
+    def test_git_diff_reports_empty_staged_diff(self):
+        tools.run_command("git init -q && git config user.email test@example.com && git config user.name Test")
+        path = self.workspace / "tracked.txt"
+        path.write_text("content\n", encoding="utf-8")
+        tools.run_command("git add tracked.txt && git commit -qm initial")
+
+        result = tools.git_diff(staged=True)
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["stdout"], "")
+
+    def test_git_log_and_branch_list_are_read_only_native_tools(self):
+        tools.run_command("git init -q && git config user.email test@example.com && git config user.name Test")
+        path = self.workspace / "tracked.txt"
+        path.write_text("initial\n", encoding="utf-8")
+        tools.run_command("git add tracked.txt && git commit -qm initial")
+        log = tools.git_log(limit=1)
+        self.assertTrue(log["passed"])
+        self.assertIn("initial", log["stdout"])
+        branches = tools.git_branch_list()
+        self.assertTrue(branches["passed"])
+        self.assertIn("*", branches["stdout"])
+
+    def test_git_read_only_tools_reject_invalid_arguments(self):
+        self.assertIn("positive", tools.git_log(limit=0)["error"])
+        self.assertIn("escapes", tools.git_diff(path="../outside.txt")["error"])
+
+    def test_registry_dispatches_read_only_git_tools(self):
+        tools.run_command("git init -q && git config user.email test@example.com && git config user.name Test")
+        (self.workspace / "tracked.txt").write_text("initial\n", encoding="utf-8")
+        tools.run_command("git add tracked.txt && git commit -qm initial")
+        for name in ("git_status", "git_branch_list"):
+            self.assertIn("passed", execute_tool(name, {}))
+        self.assertIn("passed", execute_tool("git_log", {"limit": 1}))
+
     def test_run_command_rejects_invalid_timeout(self):
         result = tools.run_command("echo ok", timeout=0)
         self.assertIn("error", result)

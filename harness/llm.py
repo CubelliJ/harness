@@ -22,17 +22,36 @@ logger = logging.getLogger(__name__)
 ASSISTANT_PREFIX = "\u001b[92m▸ Assistant:\u001b[0m "
 MAX_RETRIES = 5
 RETRY_BASE_S = 2.0
+TITLE_MAX_INPUT_CHARS = 1200
+TITLE_MAX_OUTPUT_TOKENS = 16
+
+
+def _models_response() -> Dict[str, Any]:
+    """Fetch the model catalogue from OpenRouter."""
+    with urllib.request.urlopen(
+        urllib.request.Request(OPENROUTER_MODELS_URL, headers=_headers()),
+        timeout=MODEL_METADATA_TIMEOUT_S,
+    ) as response:
+        body = json.loads(response.read().decode("utf-8"))
+    if not isinstance(body, dict):
+        raise ValueError("OpenRouter models response is not an object")
+    return body
+
+
+def get_available_models() -> List[Dict[str, Any]]:
+    """Return usable model records from OpenRouter's model catalogue."""
+    body = _models_response()
+    models = []
+    for model in body.get("data") or []:
+        if isinstance(model, dict) and isinstance(model.get("id"), str) and model["id"].strip():
+            models.append(model)
+    return sorted(models, key=lambda model: (model.get("name") or model["id"]).lower())
 
 
 def get_model_context_length() -> Optional[int]:
     """Return the provider-reported context limit for the configured model."""
     try:
-        with urllib.request.urlopen(
-            urllib.request.Request(OPENROUTER_MODELS_URL, headers=_headers()),
-            timeout=MODEL_METADATA_TIMEOUT_S,
-        ) as response:
-            body = json.loads(response.read().decode("utf-8"))
-        return model_context_length(body, get_model())
+        return model_context_length(_models_response(), get_model())
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
         logger.warning("Could not retrieve model context length: %s", exc)
     return None
@@ -164,6 +183,49 @@ def execute_llm_call(
 
     assert last_error is not None
     raise last_error
+
+
+def generate_conversation_title(conversation: List[Dict[str, Any]]) -> str:
+    """Generate a short title from a bounded conversation excerpt.
+
+    This intentionally uses a separate tool-free request and never sends the
+    full conversation or tool output to the provider.
+    """
+    excerpt: List[str] = []
+    for message in conversation:
+        role = message.get("role")
+        if role not in {"user", "assistant"}:
+            continue
+        content = str(message.get("content") or "").strip()
+        if content:
+            excerpt.append(f"{role}: {content}")
+    prompt = "\n".join(excerpt)[-TITLE_MAX_INPUT_CHARS:]
+    if not prompt:
+        return "New conversation"
+    payload = json.dumps({
+        "model": get_model(),
+        "messages": [
+            {"role": "system", "content": (
+                "Give this coding conversation a concise title of 2-6 words. "
+                "Return only the title, with no quotes or punctuation at the end."
+            )},
+            {"role": "user", "content": prompt},
+        ],
+        "tools": [],
+        "tool_choice": "none",
+        "max_tokens": TITLE_MAX_OUTPUT_TOKENS,
+        "stream": False,
+    }).encode()
+    request = urllib.request.Request(
+        OPENROUTER_CHAT_URL, data=payload, method="POST", headers=_headers()
+    )
+    with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_S) as response:
+        body = json.loads(response.read().decode("utf-8"))
+    if body.get("error"):
+        raise RuntimeError(f"OpenRouter error: {body['error']}")
+    content = ((body.get("choices") or [{}])[0].get("message") or {}).get("content")
+    title = " ".join(str(content or "").split()).strip(" .:-")
+    return title[:60] or "New conversation"
 
 
 def parse_tool_call(tool_call: Dict[str, Any]) -> Tuple[str, str, Dict[str, Any]]:
