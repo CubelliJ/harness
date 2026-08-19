@@ -6,6 +6,7 @@ import os
 import re
 import select
 import shutil
+import subprocess
 import sys
 import termios
 import tty
@@ -117,6 +118,30 @@ def _format_model_context(model: Dict[str, Any]) -> str:
     return f"{int(context):,}" if context is not None else "?"
 
 
+def _git_branch() -> str:
+    """Return the current branch for the workspace, or a friendly fallback."""
+    try:
+        result = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=config.workspace_root(),
+            capture_output=True,
+            text=True,
+            timeout=1,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "no-git"
+    branch = result.stdout.strip()
+    if branch:
+        return branch
+    return "detached" if result.returncode == 0 else "no-git"
+
+
+def _prompt() -> str:
+    """Build the prompt with a fresh branch badge for every interaction."""
+    return f"{YOU_PROMPT}\033[35m⎇ {_git_branch()}\033[0m  "
+
+
 def _select_saved_session(sessions: list[Dict[str, Any]]) -> Optional[Path]:
     """Prompt for one of the recent saved sessions; choose newest on non-TTY input."""
     if not sessions:
@@ -194,6 +219,7 @@ def _banner() -> None:
         f"{cyan}\u001b[1m   ╰────────────────────────────────────────────╯{reset}\n"
         f"{dim}   ◌ model      {white}{model}{reset}\n"
         f"{dim}   ◌ workspace  {white}{workspace}{reset}\n"
+        f"{dim}   ◌ branch     {white}⎇ {_git_branch()}{reset}\n"
         f"{dim}   ────────────────────────────────────────────{reset}\n"
         f"{cyan}   ◆ ready{reset}  {dim}Type a request · /help for shortcuts · Ctrl+C to exit{reset}\n"
     )
@@ -448,7 +474,7 @@ def _clear_voice_display() -> None:
 def _render_voice_line(text: str) -> None:
     global _voice_display_rows
     body = normalize_transcript(text) if text else "\033[90m[listening]\033[0m"
-    line = YOU_PROMPT + body
+    line = _prompt() + body
     _clear_voice_display()
     sys.stdout.write(line)
     sys.stdout.flush()
@@ -526,7 +552,7 @@ def _voice_loop(process: Callable[[str], None]) -> None:
             session = VoiceSession()
             _voice_session = session
             _clear_voice_display()
-            sys.stdout.write(YOU_PROMPT + "\033[90m[starting]\033[0m")
+            sys.stdout.write(_prompt() + "\033[90m[starting]\033[0m")
             sys.stdout.flush()
             try:
                 session.start()
@@ -559,7 +585,7 @@ def _voice_loop(process: Callable[[str], None]) -> None:
                 _clear_voice_display()
                 raise KeyboardInterrupt
             _clear_voice_display()
-            sys.stdout.write("%s%s\n" % (YOU_PROMPT, normalize_transcript(text)))
+            sys.stdout.write("%s%s\n" % (_prompt(), normalize_transcript(text)))
             sys.stdout.flush()
             if not text.strip():
                 continue
@@ -745,7 +771,7 @@ def run(initial_request: str = "", reload: bool = False) -> None:
 
     while True:
         try:
-            user_input = _read_input(YOU_PROMPT)
+            user_input = _read_input(_prompt())
         except (KeyboardInterrupt, EOFError):
             return
         command = user_input.strip().lower()
