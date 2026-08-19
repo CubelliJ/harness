@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.0](https://github.com/CubelliJ/harness/compare/v0.20.0...v0.21.0) (2026-08-19)
+
+
+### Features
+
+* elevate terminal visual experience ([#53](https://github.com/CubelliJ/harness/issues/53)) ([6e30cd6](https://github.com/CubelliJ/harness/commit/6e30cd6e3fc98f08195173b0cd2492685071299a))
+
 ## [0.20.0](https://github.com/CubelliJ/harness/compare/v0.19.0...v0.20.0) (2026-08-19)
 
 
