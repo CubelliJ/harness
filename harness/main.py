@@ -14,8 +14,13 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from harness import config, get_version
-from harness.config import history_file_path
+from harness.config import (
+    CONTEXT_COMPACTION_CAP,
+    CONTEXT_COMPACTION_RATIO,
+    history_file_path,
+)
 from harness.conversation import (
+    compact_conversation,
     ASSISTANT_PREFIX,
     YOU_PROMPT,
     assistant_message,
@@ -517,11 +522,31 @@ def run(initial_request: str = "") -> None:
     conversation = [system_message(get_full_system_prompt(config.workspace_root()))]
     save_conversation_history(history_path, conversation)
 
+    def compaction_budget() -> Optional[int]:
+        if not context_limit or context_limit < 1:
+            return None
+        return min(CONTEXT_COMPACTION_CAP, int(context_limit * CONTEXT_COMPACTION_RATIO))
+
+    def compact(force: bool = False) -> bool:
+        changed = compact_conversation(conversation, compaction_budget(), force=force)
+        if changed:
+            save_conversation_history(history_path, conversation)
+        return changed
+
+    def clear_conversation() -> None:
+        conversation[:] = [
+            system_message(get_full_system_prompt(config.workspace_root())),
+            system_message("[New conversation started. Treat the next request as a fresh task.]"),
+        ]
+        save_conversation_history(history_path, conversation)
+
     def process(user_input: str) -> None:
         nonlocal session_auto_approve, context_tokens
         conversation.append(user_message(user_input))
+        compact()
         save_conversation_history(history_path, conversation)
         while True:
+            compact()
             content, tool_calls, usage = execute_llm_call(conversation)
             raw_prompt_tokens = usage.get("prompt_tokens")
             if isinstance(raw_prompt_tokens, int) and not isinstance(raw_prompt_tokens, bool):
@@ -610,6 +635,17 @@ def run(initial_request: str = "") -> None:
         if command == "/context":
             _print_context(context_tokens, context_limit)
             continue
+        if command == "/compact":
+            if compact(force=True):
+                print("\033[90m▸ context compacted\033[0m")
+            else:
+                print("\033[90m▸ no complete conversation turn available to compact\033[0m")
+            continue
+        if command == "/clear":
+            clear_conversation()
+            context_tokens = None
+            print("\033[90m▸ new conversation started\033[0m")
+            continue
         if command == "/model" or command.startswith("/model "):
             selected_model = _select_model(user_input.strip()[len("/model"):].strip())
             if selected_model:
@@ -627,7 +663,7 @@ def run(initial_request: str = "") -> None:
             print("\033[90m▸ voice mode is off\033[0m")
             continue
         if command in {"/help", "?"}:
-            print("Commands: /model, /model <number|id>, /context, /auto-accept, /auto-accept off, /voice, /quit")
+            print("Commands: /model, /model <number|id>, /context, /compact, /clear, /auto-accept, /auto-accept off, /voice, /quit")
             continue
         if user_input.strip():
             try:
