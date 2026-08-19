@@ -2,7 +2,10 @@
 
 Use this workflow when asked to create, open, or prepare a pull request.
 
-1. Confirm the working tree and current branch:
+1. Confirm the working tree and current branch. Prefer the automatic read-only
+   Git tools (`git_status`, `git_log`, `git_diff`, and `git_branch_list`) when
+   available. Use confirmed `run_command` for push, PR, merge, and other Git
+   mutations.
 
    ```bash
    git status --short --branch

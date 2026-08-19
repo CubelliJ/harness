@@ -20,8 +20,10 @@ feature/* → develop → main
    Choose a short, descriptive branch name using kebab-case. Do not base new
    work on `main` or on an outdated local branch.
 
-2. Inspect the repository instructions and current status before editing. Keep
-   the feature focused and avoid unrelated changes.
+2. Inspect the repository instructions and current status before editing. Prefer
+   the automatic read-only Git tools (`git_status`, `git_diff`, `git_log`, and
+   `git_branch_list`) for inspection. Use confirmed `run_command` for Git
+   mutations. Keep the feature focused and avoid unrelated changes.
 
 3. Use Conventional Commit messages for commits:
 

@@ -283,12 +283,72 @@ def edit_file(path: str, old_str: str, new_str: str, *, apply: bool = True) -> D
     return preview
 
 
+def _git_command(args: list[str]) -> Dict[str, Any]:
+    """Run a Git subcommand without invoking a shell."""
+    cwd = workspace_root().expanduser().resolve()
+    if not (cwd / ".git").exists():
+        return {"error": "Workspace is not a Git repository"}
+    try:
+        completed = subprocess.run(
+            ["git", *args], cwd=cwd, capture_output=True, text=True, timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"error": str(exc)}
+    stdout, stderr = completed.stdout or "", completed.stderr or ""
+    return {
+        "args": args, "returncode": completed.returncode,
+        "stdout": stdout[-20_000:], "stderr": stderr[-20_000:],
+        "passed": completed.returncode == 0,
+        "truncated": len(stdout) > 20_000 or len(stderr) > 20_000,
+    }
+
+
+def git_status() -> Dict[str, Any]:
+    """Return concise working-tree status."""
+    return _git_command(["status", "--short", "--branch"])
+
+
+def git_diff(staged: bool = False, path: str = "") -> Dict[str, Any]:
+    """Return the working-tree or staged diff, optionally for one workspace path."""
+    args = ["diff"] + (["--cached"] if staged else [])
+    if path:
+        try:
+            relative = resolve_abs_path(path).relative_to(workspace_root().resolve())
+        except (ValueError, OSError) as exc:
+            return {"error": str(exc)}
+        args += ["--", relative.as_posix()]
+    return _git_command(args)
+
+
+def git_log(limit: int = 20, path: str = "") -> Dict[str, Any]:
+    """Return recent commits, optionally limited to one workspace path."""
+    if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
+        return {"error": "limit must be a positive integer"}
+    args = ["log", "--oneline", "--decorate", f"-n{min(limit, 100)}"]
+    if path:
+        try:
+            relative = resolve_abs_path(path).relative_to(workspace_root().resolve())
+        except (ValueError, OSError) as exc:
+            return {"error": str(exc)}
+        args += ["--", relative.as_posix()]
+    return _git_command(args)
+
+
+def git_branch_list() -> Dict[str, Any]:
+    """Return local and remote branches with the current branch marked."""
+    return _git_command(["branch", "--all", "--no-color"])
+
+
 ALL_TOOLS = [
     ("read_file", read_file),
     ("run_command", run_command),
     ("list_files", list_files),
     ("search_files", search_files),
     ("edit_file", edit_file),
+    ("git_status", git_status),
+    ("git_diff", git_diff),
+    ("git_log", git_log),
+    ("git_branch_list", git_branch_list),
 ]
 
 TOOL_REGISTRY = dict(ALL_TOOLS)
