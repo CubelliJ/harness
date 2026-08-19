@@ -41,8 +41,16 @@ Useful commands:
 - `/voice` — use voice input on macOS
 - `/quit` — exit Harness
 
-Shell commands always require confirmation. Session transcripts are saved in
-`~/harness_logs/`.
+Shell commands always require confirmation. Readable session transcripts are
+saved in `~/harness_logs/`, and the active conversation state is persisted in
+`~/harness_logs/`. A session is added to the recent-conversations list after its
+first human request; empty launches are not listed. Each launch starts a new
+conversation by default; use `harness --reload` to choose from the five most
+recent conversations for the current workspace. After the first completed turn,
+Harness makes one small, tool-free LLM request using a bounded excerpt while
+showing `generating conversation title...`, producing a 2–6 word title. If that request fails, it
+falls back to the first request. Use `/clear` to start a separate conversation;
+previous conversations remain resumable.
 
 ## More documentation
 
