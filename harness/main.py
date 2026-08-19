@@ -6,6 +6,7 @@ import os
 import re
 import select
 import shutil
+import subprocess
 import sys
 import termios
 import tty
@@ -106,12 +107,39 @@ def _context_bar(prompt_tokens: Optional[int], context_limit: Optional[int], wid
 def _print_context(prompt_tokens: Optional[int], context_limit: Optional[int]) -> None:
     usage = _format_tokens(prompt_tokens)
     limit = _format_tokens(context_limit) if context_limit else "unknown"
-    print(f"\033[90m▸ context {usage} / {limit} tokens {_context_bar(prompt_tokens, context_limit)}\033[0m")
+    bar = _context_bar(prompt_tokens, context_limit)
+    # Keep the helper plain for scripts/tests while making the interactive
+    # status line a little more luminous.
+    print(f"\033[90m▸ context {usage} / {limit} tokens \033[36m{bar}\033[0m")
 
 
 def _format_model_context(model: Dict[str, Any]) -> str:
     context = model.get("context_length")
     return f"{int(context):,}" if context is not None else "?"
+
+
+def _git_branch() -> str:
+    """Return the current branch for the workspace, or a friendly fallback."""
+    try:
+        result = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=config.workspace_root(),
+            capture_output=True,
+            text=True,
+            timeout=1,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "no-git"
+    branch = result.stdout.strip()
+    if branch:
+        return branch
+    return "detached" if result.returncode == 0 else "no-git"
+
+
+def _prompt() -> str:
+    """Build the prompt with a fresh branch badge for every interaction."""
+    return f"{YOU_PROMPT}\033[35m⎇ {_git_branch()}\033[0m  "
 
 
 def _select_saved_session(sessions: list[Dict[str, Any]]) -> Optional[Path]:
@@ -177,12 +205,33 @@ def _select_model(argument: str = "") -> Optional[str]:
 
 
 def _banner() -> None:
+    """Show a compact, decorative welcome dashboard before the REPL starts."""
+    cyan = "\u001b[36m"
+    dim = "\u001b[90m"
+    white = "\u001b[97m"
+    reset = "\u001b[0m"
+    title = f"◈  H A R N E S S   {get_version()}"
+    model = config.get_model()
+    workspace = str(config.workspace_root())
     print(
-        f"\n\u001b[36m\u001b[1m"
-        f"Harness v{get_version()}  |  {config.get_model()}  |  {config.workspace_root()}"
-        f"\u001b[0m\n"
-        "Type a request. /voice for speech input. Ctrl+C to exit.\n"
+        f"\n{cyan}\u001b[1m   ╭────────────────────────────────────────────╮{reset}\n"
+        f"{cyan}\u001b[1m   │{title.center(44)}│{reset}\n"
+        f"{cyan}\u001b[1m   ╰────────────────────────────────────────────╯{reset}\n"
+        f"{dim}   ◌ model      {white}{model}{reset}\n"
+        f"{dim}   ◌ workspace  {white}{workspace}{reset}\n"
+        f"{dim}   ◌ branch     {white}⎇ {_git_branch()}{reset}\n"
+        f"{dim}   ────────────────────────────────────────────{reset}\n"
+        f"{cyan}   ◆ ready{reset}  {dim}Type a request · /help for shortcuts · Ctrl+C to exit{reset}\n"
     )
+
+
+def _tool_status(name: str, summary: str) -> str:
+    """Format a tool result as a small decorative status badge."""
+    summary = str(summary)
+    failed = summary.startswith(("error", "rejected")) or "_rejected" in summary
+    icon = "!" if failed else "✓"
+    color = "\033[91m" if failed else "\033[92m"
+    return f"\033[90m   ├─ {color}{icon}\033[0m \033[96m{name}\033[0m \033[90m· {summary}\033[0m"
 
 
 def _echo(ch: str) -> None:
@@ -425,7 +474,7 @@ def _clear_voice_display() -> None:
 def _render_voice_line(text: str) -> None:
     global _voice_display_rows
     body = normalize_transcript(text) if text else "\033[90m[listening]\033[0m"
-    line = YOU_PROMPT + body
+    line = _prompt() + body
     _clear_voice_display()
     sys.stdout.write(line)
     sys.stdout.flush()
@@ -503,7 +552,7 @@ def _voice_loop(process: Callable[[str], None]) -> None:
             session = VoiceSession()
             _voice_session = session
             _clear_voice_display()
-            sys.stdout.write(YOU_PROMPT + "\033[90m[starting]\033[0m")
+            sys.stdout.write(_prompt() + "\033[90m[starting]\033[0m")
             sys.stdout.flush()
             try:
                 session.start()
@@ -536,7 +585,7 @@ def _voice_loop(process: Callable[[str], None]) -> None:
                 _clear_voice_display()
                 raise KeyboardInterrupt
             _clear_voice_display()
-            sys.stdout.write("%s%s\n" % (YOU_PROMPT, normalize_transcript(text)))
+            sys.stdout.write("%s%s\n" % (_prompt(), normalize_transcript(text)))
             sys.stdout.flush()
             if not text.strip():
                 continue
@@ -709,7 +758,7 @@ def run(initial_request: str = "", reload: bool = False) -> None:
                         result = execute_tool(name, args)
                 summary = (result.get("error") or result.get("action") or
                            result.get("path") or result.get("file_path") or "ok")
-                print(f"\u001b[90m▸ tool {name} → {summary}\u001b[0m")
+                print(_tool_status(name, summary))
                 conversation.append(tool_message(call_id, format_tool_result_content(name, result)))
             persist()
 
@@ -722,7 +771,7 @@ def run(initial_request: str = "", reload: bool = False) -> None:
 
     while True:
         try:
-            user_input = _read_input(YOU_PROMPT)
+            user_input = _read_input(_prompt())
         except (KeyboardInterrupt, EOFError):
             return
         command = user_input.strip().lower()
