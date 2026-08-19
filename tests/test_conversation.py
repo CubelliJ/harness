@@ -28,6 +28,13 @@ class ConversationTestCase(unittest.TestCase):
             "role": "tool", "tool_call_id": "call-1", "content": "result"
         })
 
+    def test_user_message_with_images_uses_content_parts(self):
+        image = {"type": "image_url", "image_url": {"url": "data:image/png;base64,AA=="}}
+        self.assertEqual(user_message("  describe this  ", [image]), {
+            "role": "user",
+            "content": [{"type": "text", "text": "describe this"}, image],
+        })
+
     def test_compact_conversation_preserves_system_and_complete_recent_turn(self):
         conversation = [
             system_message("rules"),

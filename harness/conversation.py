@@ -135,8 +135,14 @@ def system_message(content: str) -> Dict[str, Any]:
     return {"role": "system", "content": content}
 
 
-def user_message(content: str) -> Dict[str, Any]:
-    return {"role": "user", "content": content.strip()}
+def user_message(content: str, images: Optional[Sequence[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """Build a user message, optionally including OpenAI-compatible image parts."""
+    text = content.strip()
+    if not images:
+        return {"role": "user", "content": text}
+    parts: List[Dict[str, Any]] = [{"type": "text", "text": text}]
+    parts.extend(images)
+    return {"role": "user", "content": parts}
 
 
 def assistant_message(

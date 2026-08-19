@@ -1,10 +1,13 @@
 """Main entry point and agent loop."""
 
 import argparse
+import base64
 import logging
+import mimetypes
 import os
 import re
 import select
+import shlex
 import shutil
 import subprocess
 import sys
@@ -81,6 +84,19 @@ _KITTY_KEYBOARD_DISABLE = "\u001b[<u"
 # With the Kitty keyboard protocol enabled, Ctrl+C is reported as this CSI
 # sequence rather than the traditional ETX byte (\\x03).
 _CTRL_C_SEQUENCES = ("\u001b[99;5u",)
+_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+
+
+def _image_part(path_text: str) -> Dict[str, Any]:
+    """Read an image and return an OpenAI-compatible image URL content part."""
+    path = Path(path_text).expanduser().resolve()
+    if path.suffix.lower() not in _IMAGE_EXTENSIONS:
+        raise ValueError("supported image types are .jpg, .jpeg, .png, .gif, and .webp")
+    if not path.is_file():
+        raise ValueError(f"image not found: {path_text}")
+    mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    return {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{encoded}"}}
 
 
 def _is_shift_enter(sequence: str) -> bool:
@@ -601,7 +617,10 @@ def _voice_loop(process: Callable[[str], None]) -> None:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 
-def run(initial_request: str = "", reload: bool = False) -> None:
+def run(
+    initial_request: str = "", reload: bool = False,
+    initial_images: Optional[list[Dict[str, Any]]] = None,
+) -> None:
     """Run the REPL, optionally resuming the persisted conversation."""
     _banner()
     session_auto_approve = config.auto_approve()
@@ -628,6 +647,7 @@ def run(initial_request: str = "", reload: bool = False) -> None:
     title_generated = session_title is not None
 
     session_registered = resumed
+    pending_images: list[Dict[str, Any]] = list(initial_images or [])
 
     def persist(register: Optional[bool] = None) -> None:
         nonlocal session_registered
@@ -692,9 +712,9 @@ def run(initial_request: str = "", reload: bool = False) -> None:
         history_path = state_path.with_suffix(".txt")
         persist(register=False)
 
-    def process(user_input: str) -> None:
+    def process(user_input: str, images: Optional[list[Dict[str, Any]]] = None) -> None:
         nonlocal session_auto_approve, context_tokens
-        conversation.append(user_message(user_input))
+        conversation.append(user_message(user_input, images))
         compact()
         persist()
         while True:
@@ -764,7 +784,7 @@ def run(initial_request: str = "", reload: bool = False) -> None:
 
     if initial_request:
         try:
-            process(initial_request)
+            process(initial_request, pending_images)
         except RuntimeError as e:
             print(f"\033[91m▸ error: {e}\033[0m")
         return
@@ -787,6 +807,16 @@ def run(initial_request: str = "", reload: bool = False) -> None:
             continue
         if command == "/context":
             _print_context(context_tokens, context_limit)
+            continue
+        if command == "/image" or command.startswith("/image "):
+            try:
+                paths = shlex.split(user_input.strip()[len("/image"):].strip())
+                if not paths:
+                    raise ValueError("usage: /image <path> [path ...]")
+                pending_images.extend(_image_part(path) for path in paths)
+                print(f"\033[90m▸ attached {len(paths)} image(s) to the next request\033[0m")
+            except (OSError, ValueError) as exc:
+                print(f"\033[91m▸ image: {exc}\033[0m")
             continue
         if command == "/compact":
             if compact(force=True):
@@ -816,11 +846,13 @@ def run(initial_request: str = "", reload: bool = False) -> None:
             print("\033[90m▸ voice mode is off\033[0m")
             continue
         if command in {"/help", "?"}:
-            print("Commands: /model, /model <number|id>, /context, /compact, /clear, /auto-accept, /auto-accept off, /voice, /quit")
+            print("Commands: /model, /model <number|id>, /context, /compact, /clear, /auto-accept, /auto-accept off, /voice, /image <path> [...], /quit")
             continue
         if user_input.strip():
             try:
-                process(user_input)
+                images = pending_images
+                pending_images = []
+                process(user_input, images)
             except RuntimeError as e:
                 print(f"\033[91m▸ error: {e}\033[0m")
 
@@ -843,6 +875,10 @@ def main() -> None:
     parser.add_argument(
         "--request", "-r", default="",
         help="run one request non-interactively, then exit",
+    )
+    parser.add_argument(
+        "--image", action="append", default=[], metavar="PATH",
+        help="attach an image to the request (repeatable)",
     )
     parser.add_argument("--scenario", help="load the request from eval_scenarios/manifest.json")
     parser.add_argument(
@@ -869,10 +905,14 @@ def main() -> None:
     if args.dry_run:
         os.environ["HARNESS_DRY_RUN"] = "1"
     config.init()
+    try:
+        images = [_image_part(path) for path in args.image]
+    except (OSError, ValueError) as exc:
+        parser.error(f"could not load image: {exc}")
     request = args.request
     if not request and not sys.stdin.isatty():
         request = sys.stdin.read().strip()
-    run(request, reload=args.reload)
+    run(request, reload=args.reload, initial_images=images)
 
 
 if __name__ == "__main__":

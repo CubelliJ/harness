@@ -39,7 +39,17 @@ Useful commands:
 - `/clear` — start a fresh conversation while preserving the workspace
 - `/auto-accept` — approve future file edits automatically
 - `/voice` — use voice input on macOS
+- `/image <path> [path ...]` — attach screenshots/images to the next request
 - `/quit` — exit Harness
+
+Images can also be attached non-interactively with repeatable options:
+
+```bash
+harness --request "Describe this screenshot" --image ./screenshot.png
+```
+
+Supported formats are JPEG, PNG, GIF, and WebP. Images are sent as inline data
+URLs in the multimodal request and are not copied into the workspace.
 
 Shell commands always require confirmation. Readable session transcripts are
 saved in `~/harness_logs/`, and the active conversation state is persisted in
