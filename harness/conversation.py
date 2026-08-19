@@ -2,8 +2,9 @@
 
 import json
 import logging
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,107 @@ def save_conversation_history(path: Path, conversation: List[Dict[str, Any]]) ->
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(_format_message(m) for m in conversation), encoding="utf-8")
     logger.debug("wrote history %s (%d messages)", path, len(conversation))
+
+
+def session_catalog_path(state_path: Path) -> Path:
+    """Return the catalogue path for sessions in the same log directory."""
+    return state_path.parent / "sessions.json"
+
+
+def conversation_title(conversation: Sequence[Dict[str, Any]]) -> str:
+    """Create a short display title from the first user request."""
+    for message in conversation:
+        if message.get("role") == "user":
+            text = " ".join(str(message.get("content") or "").split())
+            if text:
+                return text[:57] + "..." if len(text) > 60 else text
+    return "New conversation"
+
+
+def save_session_catalog(path: Path, sessions: List[Dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps({"version": 1, "sessions": sessions},
+                         ensure_ascii=False, indent=2) + "\n"
+    temporary = path.with_name(path.name + ".tmp")
+    try:
+        temporary.write_text(payload, encoding="utf-8")
+        temporary.replace(path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def load_session_catalog(path: Path, workspace: Optional[Path] = None) -> List[Dict[str, Any]]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        sessions = payload["sessions"]
+        if payload.get("version") != 1 or not isinstance(sessions, list):
+            raise ValueError("invalid session catalogue")
+        valid = [s for s in sessions if isinstance(s, dict) and s.get("path")]
+        if workspace is None:
+            return valid
+        workspace_name = str(workspace.resolve())
+        return [s for s in valid if s.get("workspace") == workspace_name]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+        return []
+
+
+def update_session_catalog(
+    path: Path, state_path: Path, conversation: Sequence[Dict[str, Any]],
+    title: Optional[str] = None, workspace: Optional[Path] = None,
+) -> List[Dict[str, Any]]:
+    """Record a session, retaining five recent sessions per workspace."""
+    sessions = load_session_catalog(path)
+    workspace_name = str((workspace or Path.cwd()).resolve())
+    entry = {
+        "path": str(state_path),
+        "workspace": workspace_name,
+        "title": title or conversation_title(conversation),
+        "updated": datetime.now().isoformat(timespec="seconds"),
+    }
+    sessions = [s for s in sessions if s.get("path") != str(state_path)]
+    workspace_sessions = [s for s in sessions if s.get("workspace") == workspace_name]
+    other_sessions = [s for s in sessions if s.get("workspace") != workspace_name]
+    workspace_sessions.insert(0, entry)
+    sessions = other_sessions + workspace_sessions[:5]
+    save_session_catalog(path, sessions)
+    return workspace_sessions[:5]
+
+
+def session_state_path(history_path: Path) -> Path:
+    """Return the structured state path associated with a readable history."""
+    return history_path.with_suffix(".json")
+
+
+def save_conversation_state(path: Path, conversation: List[Dict[str, Any]]) -> None:
+    """Persist messages in the provider-compatible format used for resume."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps({"version": 1, "conversation": conversation},
+                         ensure_ascii=False, indent=2) + "\n"
+    temporary = path.with_name(path.name + ".tmp")
+    try:
+        temporary.write_text(payload, encoding="utf-8")
+        temporary.replace(path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+    logger.debug("wrote session state %s (%d messages)", path, len(conversation))
+
+
+def load_conversation_state(path: Path) -> Optional[List[Dict[str, Any]]]:
+    """Load a previously persisted conversation, or return ``None`` if absent/invalid."""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        conversation = payload["conversation"]
+        if payload.get("version") != 1 or not isinstance(conversation, list):
+            raise ValueError("unsupported session state")
+        if not all(isinstance(message, dict) and message.get("role") for message in conversation):
+            raise ValueError("invalid conversation messages")
+        return conversation
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        if path.exists():
+            logger.warning("could not resume session from %s: %s", path, exc)
+        return None
 
 
 def system_message(content: str) -> Dict[str, Any]:

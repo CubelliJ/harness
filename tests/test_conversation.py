@@ -4,7 +4,14 @@ from pathlib import Path
 
 from harness.conversation import (
     assistant_message,
+    conversation_title,
+    load_conversation_state,
+    load_session_catalog,
     save_conversation_history,
+    save_session_catalog,
+    session_catalog_path,
+    save_conversation_state,
+    session_state_path,
     system_message,
     compact_conversation,
     tool_message,
@@ -62,6 +69,47 @@ class ConversationTestCase(unittest.TestCase):
         self.assertTrue(changed)
         self.assertEqual(conversation[0], system_message("rules"))
         self.assertIn("compacted", conversation[1]["content"])
+
+    def test_state_round_trip_and_session_catalog(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "session.json"
+            conversation = [system_message("rules"), user_message("hello world")]
+            save_conversation_state(path, conversation)
+            self.assertEqual(load_conversation_state(path), conversation)
+            catalog = Path(directory) / "sessions.json"
+            save_session_catalog(catalog, [{"path": str(path), "title": "hello world"}])
+            self.assertEqual(load_session_catalog(catalog)[0]["title"], "hello world")
+            self.assertEqual(conversation_title(conversation), "hello world")
+            self.assertEqual(session_catalog_path(path), catalog)
+
+    def test_session_catalog_keeps_five_entries(self):
+        with tempfile.TemporaryDirectory() as directory:
+            from harness.conversation import update_session_catalog
+            catalog = Path(directory) / "sessions.json"
+            for index in range(6):
+                state = Path(directory) / f"session-{index}.json"
+                update_session_catalog(catalog, state, [user_message(f"request {index}")])
+            sessions = load_session_catalog(catalog)
+            self.assertEqual(len(sessions), 5)
+            self.assertEqual(sessions[0]["title"], "request 5")
+
+    def test_session_catalog_is_filtered_by_workspace(self):
+        with tempfile.TemporaryDirectory() as directory:
+            from harness.conversation import update_session_catalog
+            root = Path(directory)
+            catalog = root / "sessions.json"
+            first = root / "first.json"
+            second = root / "second.json"
+            update_session_catalog(catalog, first, [user_message("first")], workspace=root / "one")
+            update_session_catalog(catalog, second, [user_message("second")], workspace=root / "two")
+            self.assertEqual(load_session_catalog(catalog, root / "one")[0]["title"], "first")
+            self.assertEqual(load_session_catalog(catalog, root / "two")[0]["title"], "second")
+
+    def test_invalid_state_is_ignored(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "session.json"
+            path.write_text('{"version": 1, "conversation": "bad"}', encoding="utf-8")
+            self.assertIsNone(load_conversation_state(path))
 
     def test_save_conversation_creates_parent_and_serializes_tool_calls(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -9,6 +9,7 @@ import shutil
 import sys
 import termios
 import tty
+import uuid
 import json
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Tuple
@@ -24,7 +25,14 @@ from harness.conversation import (
     ASSISTANT_PREFIX,
     YOU_PROMPT,
     assistant_message,
+    conversation_title,
+    load_conversation_state,
+    load_session_catalog,
+    save_conversation_state,
+    session_catalog_path,
+    update_session_catalog,
     save_conversation_history,
+    session_state_path,
     system_message,
     tool_message,
     user_message,
@@ -33,6 +41,7 @@ from harness.llm import (
     execute_llm_call,
     get_available_models,
     get_model_context_length,
+    generate_conversation_title,
     parse_tool_call,
 )
 from harness.registry import (
@@ -103,6 +112,37 @@ def _print_context(prompt_tokens: Optional[int], context_limit: Optional[int]) -
 def _format_model_context(model: Dict[str, Any]) -> str:
     context = model.get("context_length")
     return f"{int(context):,}" if context is not None else "?"
+
+
+def _select_saved_session(sessions: list[Dict[str, Any]]) -> Optional[Path]:
+    """Prompt for one of the recent saved sessions; choose newest on non-TTY input."""
+    if not sessions:
+        return None
+    print("\033[36mRecent conversations:\033[0m")
+    for index, session in enumerate(sessions[:5], 1):
+        title = session.get("title") or "Untitled conversation"
+        updated = session.get("updated", "")
+        print(f"  {index}. {title} \033[90m{updated}\033[0m")
+    if not sys.stdin.isatty():
+        return Path(sessions[0]["path"])
+    count = min(5, len(sessions))
+    choice_label = "1" if count == 1 else f"1-{count}"
+    try:
+        answer = input(f"Resume [{choice_label}, Enter to cancel]: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return None
+    if not answer:
+        return None
+    try:
+        index = int(answer)
+    except ValueError:
+        print("\033[90m▸ enter a conversation number\033[0m")
+        return None
+    if not 1 <= index <= min(5, len(sessions)):
+        print("\033[90m▸ no conversation with that number\033[0m")
+        return None
+    return Path(sessions[index - 1]["path"])
 
 
 def _select_model(argument: str = "") -> Optional[str]:
@@ -512,15 +552,70 @@ def _voice_loop(process: Callable[[str], None]) -> None:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 
-def run(initial_request: str = "") -> None:
-    """Run the REPL, or process one request when initial_request is supplied."""
+def run(initial_request: str = "", reload: bool = False) -> None:
+    """Run the REPL, optionally resuming the persisted conversation."""
     _banner()
     session_auto_approve = config.auto_approve()
     context_tokens: Optional[int] = None
     context_limit = get_model_context_length()
+    workspace = config.workspace_root()
     history_path = history_file_path()
-    conversation = [system_message(get_full_system_prompt(config.workspace_root()))]
-    save_conversation_history(history_path, conversation)
+    state_path = session_state_path(history_path)
+    catalog_path = session_catalog_path(state_path)
+    saved_sessions = load_session_catalog(catalog_path, workspace)
+    selected_path = None
+    session_title: Optional[str] = None
+    if reload:
+        selected_path = _select_saved_session(saved_sessions)
+        if selected_path is not None:
+            state_path = selected_path
+            history_path = selected_path.with_suffix(".txt")
+            selected = next((s for s in saved_sessions if s.get("path") == str(selected_path)), None)
+            session_title = selected.get("title") if selected else None
+    conversation = load_conversation_state(state_path) if reload else None
+    resumed = conversation is not None
+    if conversation is None:
+        conversation = [system_message(get_full_system_prompt(config.workspace_root()))]
+    title_generated = session_title is not None
+
+    session_registered = resumed
+
+    def persist(register: Optional[bool] = None) -> None:
+        nonlocal session_registered
+        save_conversation_history(history_path, conversation)
+        save_conversation_state(state_path, conversation)
+        if register is None:
+            register = not session_registered
+        if register:
+            update_session_catalog(catalog_path, state_path, conversation, session_title, workspace)
+            session_registered = True
+
+    def maybe_generate_title() -> None:
+        nonlocal session_title, title_generated
+        if title_generated or not any(m.get("role") == "user" for m in conversation):
+            return
+        title_generated = True
+        status = "\033[90m▸ generating conversation title...\033[0m"
+        interactive = sys.stdout.isatty()
+        if interactive:
+            sys.stdout.write(status)
+            sys.stdout.flush()
+        else:
+            print(status, flush=True)
+        try:
+            session_title = generate_conversation_title(conversation)
+        except (OSError, RuntimeError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            logger.warning("could not generate conversation title: %s", exc)
+        finally:
+            if interactive:
+                sys.stdout.write("\r\033[2K")
+                sys.stdout.flush()
+        persist()
+
+    # Write the active state for crash recovery, but do not list an empty session.
+    persist(register=False)
+    if resumed:
+        print(f"\033[90m▸ resumed conversation ({len(conversation)} messages)\033[0m")
 
     def compaction_budget() -> Optional[int]:
         if not context_limit or context_limit < 1:
@@ -530,21 +625,29 @@ def run(initial_request: str = "") -> None:
     def compact(force: bool = False) -> bool:
         changed = compact_conversation(conversation, compaction_budget(), force=force)
         if changed:
-            save_conversation_history(history_path, conversation)
+            persist()
         return changed
 
     def clear_conversation() -> None:
+        nonlocal history_path, state_path, session_title, title_generated, session_registered
         conversation[:] = [
-            system_message(get_full_system_prompt(config.workspace_root())),
+            system_message(get_full_system_prompt(workspace)),
             system_message("[New conversation started. Treat the next request as a fresh task.]"),
         ]
-        save_conversation_history(history_path, conversation)
+        session_title = None
+        title_generated = False
+        session_registered = False
+        state_path = state_path.with_name(
+            f"{state_path.stem}_{uuid.uuid4().hex}.json"
+        )
+        history_path = state_path.with_suffix(".txt")
+        persist(register=False)
 
     def process(user_input: str) -> None:
         nonlocal session_auto_approve, context_tokens
         conversation.append(user_message(user_input))
         compact()
-        save_conversation_history(history_path, conversation)
+        persist()
         while True:
             compact()
             content, tool_calls, usage = execute_llm_call(conversation)
@@ -553,14 +656,15 @@ def run(initial_request: str = "") -> None:
                 context_tokens = raw_prompt_tokens
             if not tool_calls:
                 conversation.append(assistant_message(content))
-                save_conversation_history(history_path, conversation)
+                persist()
+                maybe_generate_title()
                 if content:
                     print(f"{ASSISTANT_PREFIX}{render_markdown(content)}")
                 return
             if content:
                 print(f"{ASSISTANT_PREFIX}{render_markdown(content)}")
             conversation.append(assistant_message(content or None, tool_calls=tool_calls))
-            save_conversation_history(history_path, conversation)
+            persist()
             for tc in tool_calls:
                 # A malformed model response must become a tool error, not a
                 # filesystem operation or a crashed session. Preserve the call
@@ -607,7 +711,7 @@ def run(initial_request: str = "") -> None:
                            result.get("path") or result.get("file_path") or "ok")
                 print(f"\u001b[90m▸ tool {name} → {summary}\u001b[0m")
                 conversation.append(tool_message(call_id, format_tool_result_content(name, result)))
-            save_conversation_history(history_path, conversation)
+            persist()
 
     if initial_request:
         try:
@@ -684,6 +788,10 @@ def main() -> None:
     parser.add_argument("--yes", action="store_true", help="approve all file edits")
     parser.add_argument("--dry-run", action="store_true", help="show edits without applying them")
     parser.add_argument(
+        "--reload", action="store_true",
+        help="resume the previous persisted conversation",
+    )
+    parser.add_argument(
         "--request", "-r", default="",
         help="run one request non-interactively, then exit",
     )
@@ -715,7 +823,7 @@ def main() -> None:
     request = args.request
     if not request and not sys.stdin.isatty():
         request = sys.stdin.read().strip()
-    run(request)
+    run(request, reload=args.reload)
 
 
 if __name__ == "__main__":
