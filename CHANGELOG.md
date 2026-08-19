@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/CubelliJ/harness/compare/v0.18.0...v0.19.0) (2026-08-19)
+
+
+### Features
+
+* add session persistence and resume support ([583a55a](https://github.com/CubelliJ/harness/commit/583a55af47dfa4c22b6e666ecf0458d821ab44f1))
+
 ## [0.18.0](https://github.com/CubelliJ/harness/compare/v0.17.0...v0.18.0) (2026-08-19)
 
 
