@@ -180,18 +180,32 @@ def _select_model(argument: str = "") -> Optional[str]:
 
 
 def _banner() -> None:
-    """Show a compact, decorative welcome card before the REPL starts."""
+    """Show a compact, decorative welcome dashboard before the REPL starts."""
     cyan = "\u001b[36m"
     dim = "\u001b[90m"
+    white = "\u001b[97m"
     reset = "\u001b[0m"
     title = f"◈  H A R N E S S   {get_version()}"
+    model = config.get_model()
+    workspace = str(config.workspace_root())
     print(
         f"\n{cyan}\u001b[1m   ╭────────────────────────────────────────────╮{reset}\n"
         f"{cyan}\u001b[1m   │{title.center(44)}│{reset}\n"
         f"{cyan}\u001b[1m   ╰────────────────────────────────────────────╯{reset}\n"
-        f"{dim}   {config.get_model()}  ·  {config.workspace_root()}{reset}\n"
-        f"{dim}   Type a request  ·  /help for shortcuts  ·  Ctrl+C to exit{reset}\n"
+        f"{dim}   ◌ model      {white}{model}{reset}\n"
+        f"{dim}   ◌ workspace  {white}{workspace}{reset}\n"
+        f"{dim}   ────────────────────────────────────────────{reset}\n"
+        f"{cyan}   ◆ ready{reset}  {dim}Type a request · /help for shortcuts · Ctrl+C to exit{reset}\n"
     )
+
+
+def _tool_status(name: str, summary: str) -> str:
+    """Format a tool result as a small decorative status badge."""
+    summary = str(summary)
+    failed = summary.startswith(("error", "rejected")) or "_rejected" in summary
+    icon = "!" if failed else "✓"
+    color = "\033[91m" if failed else "\033[92m"
+    return f"\033[90m   ├─ {color}{icon}\033[0m \033[96m{name}\033[0m \033[90m· {summary}\033[0m"
 
 
 def _echo(ch: str) -> None:
@@ -718,7 +732,7 @@ def run(initial_request: str = "", reload: bool = False) -> None:
                         result = execute_tool(name, args)
                 summary = (result.get("error") or result.get("action") or
                            result.get("path") or result.get("file_path") or "ok")
-                print(f"\u001b[90m▸ tool {name} → {summary}\u001b[0m")
+                print(_tool_status(name, summary))
                 conversation.append(tool_message(call_id, format_tool_result_content(name, result)))
             persist()
 
