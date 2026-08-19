@@ -10,6 +10,10 @@ Harness exposes local workspace tools to the model:
 | `run_command` | Run a shell command, with confirmation |
 | `search_files` | Search text files while honoring `.gitignore` |
 | `edit_file` | Preview and edit a file |
+| `git_status` | Show concise Git status (read-only) |
+| `git_diff` | Inspect unstaged or staged Git diff (read-only) |
+| `git_log` | Inspect recent Git commits (read-only) |
+| `git_branch_list` | List local and remote branches (read-only) |
 
 Edits are shown as unified diffs and require confirmation by default. Use
 `--yes` or `/auto-accept` to approve file edits automatically. Shell commands
