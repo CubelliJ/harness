@@ -184,9 +184,10 @@ def _banner() -> None:
     cyan = "\u001b[36m"
     dim = "\u001b[90m"
     reset = "\u001b[0m"
+    title = f"◈  H A R N E S S   {get_version()}"
     print(
         f"\n{cyan}\u001b[1m   ╭────────────────────────────────────────────╮{reset}\n"
-        f"{cyan}\u001b[1m   │  ◈  H A R N E S S   {get_version():<21}│{reset}\n"
+        f"{cyan}\u001b[1m   │{title.center(44)}│{reset}\n"
         f"{cyan}\u001b[1m   ╰────────────────────────────────────────────╯{reset}\n"
         f"{dim}   {config.get_model()}  ·  {config.workspace_root()}{reset}\n"
         f"{dim}   Type a request  ·  /help for shortcuts  ·  Ctrl+C to exit{reset}\n"
