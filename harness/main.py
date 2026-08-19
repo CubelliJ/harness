@@ -106,7 +106,10 @@ def _context_bar(prompt_tokens: Optional[int], context_limit: Optional[int], wid
 def _print_context(prompt_tokens: Optional[int], context_limit: Optional[int]) -> None:
     usage = _format_tokens(prompt_tokens)
     limit = _format_tokens(context_limit) if context_limit else "unknown"
-    print(f"\033[90m▸ context {usage} / {limit} tokens {_context_bar(prompt_tokens, context_limit)}\033[0m")
+    bar = _context_bar(prompt_tokens, context_limit)
+    # Keep the helper plain for scripts/tests while making the interactive
+    # status line a little more luminous.
+    print(f"\033[90m▸ context {usage} / {limit} tokens \033[36m{bar}\033[0m")
 
 
 def _format_model_context(model: Dict[str, Any]) -> str:
@@ -177,11 +180,16 @@ def _select_model(argument: str = "") -> Optional[str]:
 
 
 def _banner() -> None:
+    """Show a compact, decorative welcome card before the REPL starts."""
+    cyan = "\u001b[36m"
+    dim = "\u001b[90m"
+    reset = "\u001b[0m"
     print(
-        f"\n\u001b[36m\u001b[1m"
-        f"Harness v{get_version()}  |  {config.get_model()}  |  {config.workspace_root()}"
-        f"\u001b[0m\n"
-        "Type a request. /voice for speech input. Ctrl+C to exit.\n"
+        f"\n{cyan}\u001b[1m   ╭────────────────────────────────────────────╮{reset}\n"
+        f"{cyan}\u001b[1m   │  ◈  H A R N E S S   {get_version():<21}│{reset}\n"
+        f"{cyan}\u001b[1m   ╰────────────────────────────────────────────╯{reset}\n"
+        f"{dim}   {config.get_model()}  ·  {config.workspace_root()}{reset}\n"
+        f"{dim}   Type a request  ·  /help for shortcuts  ·  Ctrl+C to exit{reset}\n"
     )
 
 
