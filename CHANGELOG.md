@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.20.0](https://github.com/CubelliJ/harness/compare/v0.19.0...v0.20.0) (2026-08-19)
+
+
+### Features
+
+* add native read-only git tools ([f40fa75](https://github.com/CubelliJ/harness/commit/f40fa755065db1499db53228d35a23d9dae1dd46))
+* add native read-only git tools ([f28567c](https://github.com/CubelliJ/harness/commit/f28567ca161bf607a9bdc7f34bb904ba67a59288))
+
 ## [0.19.0](https://github.com/CubelliJ/harness/compare/v0.18.0...v0.19.0) (2026-08-19)
 
 
