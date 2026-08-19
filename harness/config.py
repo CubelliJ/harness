@@ -14,6 +14,8 @@ OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
 OPENROUTER_MODEL = "openai/gpt-5.6-luna"
 REQUEST_TIMEOUT_S = 600
 MODEL_METADATA_TIMEOUT_S = 3
+CONTEXT_COMPACTION_RATIO = 0.25
+CONTEXT_COMPACTION_CAP = 250_000
 
 
 def _read_dotenv(path: Path) -> dict[str, str]:
