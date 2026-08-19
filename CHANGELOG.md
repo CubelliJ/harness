@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.18.0](https://github.com/CubelliJ/harness/compare/v0.17.0...v0.18.0) (2026-08-19)
+
+
+### Features
+
+* add conversation compaction controls ([8197948](https://github.com/CubelliJ/harness/commit/8197948ec51a7e9a178f72be53e79ebb2e712f5f))
+* add conversation compaction controls ([c646f79](https://github.com/CubelliJ/harness/commit/c646f79740da608f10755a2102d82b9c7a89a473))
+
 ## [0.17.0](https://github.com/CubelliJ/harness/compare/v0.16.4...v0.17.0) (2026-08-18)
 
 
