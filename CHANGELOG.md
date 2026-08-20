@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.22.0](https://github.com/CubelliJ/harness/compare/v0.21.0...v0.22.0) (2026-08-20)
+
+
+### Features
+
+* add image input support ([4275442](https://github.com/CubelliJ/harness/commit/42754421f3847ae769f9741e090c4f57990d8a23))
+* detect dropped images in prompt input ([e957415](https://github.com/CubelliJ/harness/commit/e957415aab49a3b73e08210b3e81b6a223fe405d))
+* support image context in conversations ([3c4ea4b](https://github.com/CubelliJ/harness/commit/3c4ea4bf72473274d43f55eec049a00a3fa7a65c))
+* support image context in conversations ([0ffeba1](https://github.com/CubelliJ/harness/commit/0ffeba1237eaf480a99be9244a1e40e1a1b6a873))
+
 ## [0.21.0](https://github.com/CubelliJ/harness/compare/v0.20.0...v0.21.0) (2026-08-19)
 
 
