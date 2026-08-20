@@ -56,23 +56,6 @@ OPENAI_TOOLS: List[Dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "read_image",
-            "description": "Read an image file and include it in the model's visual context.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "filename": {
-                        "type": "string",
-                        "description": "Image path relative to the workspace",
-                    }
-                },
-                "required": ["filename"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "run_command",
             "description": "Run a shell command in the workspace, such as tests or a formatter, and return bounded output.",
             "parameters": {
@@ -193,7 +176,6 @@ def execute_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
     required = {
         "load_skill": ("skill",),
         "read_file": ("filename",),
-        "read_image": ("filename",),
         "run_command": ("command",),
         "search_files": ("query",),
         "edit_file": ("path", "old_str", "new_str"),
@@ -204,7 +186,7 @@ def execute_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
     try:
         if tool_name == "load_skill":
             return load_skill(args["skill"])
-        if tool_name in {"read_file", "read_image"}:
+        if tool_name == "read_file":
             return tool(args["filename"])
         if tool_name == "run_command":
             return tool(args["command"], args.get("timeout", 120))
@@ -249,14 +231,7 @@ def format_tool_result_content(tool_name: str, result: Dict[str, Any]) -> str:
             f"{result.get('content', '')}\n"
             "---- FILE END ----"
         )
-    if tool_name == "read_image":
-        return (
-            f"file_path={result.get('file_path', '')}\n"
-            f"mime_type={result.get('mime_type', '')}\n"
-            "Image attached to the conversation as visual context."
-        )
     if tool_name == "list_files":
-
         files = result.get("files") or []
         listing = "\n".join(
             f"- {item.get('filename')} ({item.get('type')})" for item in files
