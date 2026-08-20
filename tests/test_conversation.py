@@ -14,6 +14,7 @@ from harness.conversation import (
     session_state_path,
     system_message,
     compact_conversation,
+    estimate_tokens,
     tool_message,
     user_message,
 )
@@ -34,6 +35,13 @@ class ConversationTestCase(unittest.TestCase):
             "role": "user",
             "content": [{"type": "text", "text": "describe this"}, image],
         })
+
+    def test_image_token_estimate_does_not_count_base64_payload(self):
+        image = {
+            "type": "image_url",
+            "image_url": {"url": "data:image/png;base64," + "A" * 1_000_000},
+        }
+        self.assertLess(estimate_tokens(user_message("describe", [image])), 400)
 
     def test_compact_conversation_preserves_system_and_complete_recent_turn(self):
         conversation = [

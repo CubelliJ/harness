@@ -163,10 +163,24 @@ def estimate_tokens(message: Dict[str, Any]) -> int:
     """Estimate a message's tokens without requiring a model tokenizer.
 
     Four characters per token is intentionally conservative for source code and
-    tool output. The fixed overhead accounts for chat message framing.
+    tool output. Inline image data is not text, though: counting its base64
+    representation would charge roughly one token per three image bytes and
+    cause an image to evict otherwise useful conversation history. Count each
+    image as a bounded visual-token allowance instead. The provider's actual
+    image accounting remains authoritative when the request is sent.
     """
-    payload = json.dumps(message, ensure_ascii=False, separators=(",", ":"))
-    return max(1, (len(payload) + 3) // 4 + 4)
+    def token_length(value: Any) -> int:
+        if isinstance(value, dict) and value.get("type") == "image_url":
+            return 256
+        if isinstance(value, dict):
+            return sum(token_length(key) + token_length(item) for key, item in value.items())
+        if isinstance(value, list):
+            return sum(token_length(item) for item in value)
+        if isinstance(value, str):
+            return (len(value) + 3) // 4
+        return (len(json.dumps(value, ensure_ascii=False)) + 3) // 4
+
+    return max(1, token_length(message) + 4)
 
 
 def compact_conversation(

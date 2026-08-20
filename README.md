@@ -39,21 +39,19 @@ Useful commands:
 - `/clear` — start a fresh conversation while preserving the workspace
 - `/auto-accept` — approve future file edits automatically
 - `/voice` — use voice input on macOS
-- `/image <path> [path ...]` — attach screenshots/images to the next request
 - `/quit` — exit Harness
 
 Paste or drag an image file into the terminal input and submit normally;
-Harness detects the image path automatically and sends it with that request. The
-`/image <path> [path ...]` command remains available for attaching an image
-before writing the request. Images can also be attached non-interactively with
-repeatable options:
-
-```bash
-harness --request "Describe this screenshot" --image ./screenshot.png
-```
-
-Supported formats are JPEG, PNG, GIF, and WebP. Images are sent as inline data
-URLs in the multimodal request and are not copied into the workspace.
+Harness detects the image path automatically and sends it with that request. In
+an interactive macOS terminal, `Cmd+V` also preserves the pasted text—including
+multiline and long-form text—and checks the same clipboard paste for PNG/TIFF
+image data. If image data is present, it is attached automatically alongside the
+pasted text; if the paste contains only an image, type the request after the
+paste and submit. This depends on the terminal emitting bracketed-paste input;
+terminals that consume image-only pastes without sending an input event cannot
+expose that paste to Harness. Supported image formats are JPEG, PNG, GIF, WebP,
+and TIFF. Images are sent as inline data URLs in the multimodal request and are
+not copied into the workspace.
 
 Shell commands always require confirmation. Readable session transcripts are
 saved in `~/harness_logs/`, and the active conversation state is persisted in

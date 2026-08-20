@@ -2,11 +2,21 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from harness.main import _context_bar, _extract_pasted_images
+from harness.main import _clipboard_image_part, _context_bar, _extract_pasted_images
 from harness.terminal import render_markdown
 
 
 class ContextBarTests(unittest.TestCase):
+    def test_clipboard_image_requires_macos(self):
+        import harness.main as main_module
+        original_platform = main_module.sys.platform
+        try:
+            main_module.sys.platform = "linux"
+            with self.assertRaisesRegex(ValueError, "only on macOS"):
+                _clipboard_image_part()
+        finally:
+            main_module.sys.platform = original_platform
+
     def test_extracts_shell_escaped_dropped_image_path(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "Screenshot 2026.png"
