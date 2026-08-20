@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.1](https://github.com/CubelliJ/harness/compare/v0.22.0...v0.22.1) (2026-08-20)
+
+
+### Reverts
+
+* roll back image input ([a37f289](https://github.com/CubelliJ/harness/commit/a37f2894e7b3bfaa1a652472b933c7d530a04dac))
+
 ## [0.22.0](https://github.com/CubelliJ/harness/compare/v0.21.0...v0.22.0) (2026-08-20)
 
 
