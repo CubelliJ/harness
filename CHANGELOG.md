@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.22.1](https://github.com/CubelliJ/harness/compare/v0.22.0...v0.22.1) (2026-08-20)
+
+
+### Reverts
+
+* roll back image input ([a37f289](https://github.com/CubelliJ/harness/commit/a37f2894e7b3bfaa1a652472b933c7d530a04dac))
+
+## [0.22.0](https://github.com/CubelliJ/harness/compare/v0.21.0...v0.22.0) (2026-08-20)
+
+
+### Features
+
+* add image input support ([4275442](https://github.com/CubelliJ/harness/commit/42754421f3847ae769f9741e090c4f57990d8a23))
+* detect dropped images in prompt input ([e957415](https://github.com/CubelliJ/harness/commit/e957415aab49a3b73e08210b3e81b6a223fe405d))
+* support image context in conversations ([3c4ea4b](https://github.com/CubelliJ/harness/commit/3c4ea4bf72473274d43f55eec049a00a3fa7a65c))
+* support image context in conversations ([0ffeba1](https://github.com/CubelliJ/harness/commit/0ffeba1237eaf480a99be9244a1e40e1a1b6a873))
+
+## [0.21.0](https://github.com/CubelliJ/harness/compare/v0.20.0...v0.21.0) (2026-08-19)
+
+
+### Features
+
+* elevate terminal visual experience ([#53](https://github.com/CubelliJ/harness/issues/53)) ([6e30cd6](https://github.com/CubelliJ/harness/commit/6e30cd6e3fc98f08195173b0cd2492685071299a))
+
 ## [0.20.0](https://github.com/CubelliJ/harness/compare/v0.19.0...v0.20.0) (2026-08-19)
 
 

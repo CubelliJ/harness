@@ -8,8 +8,9 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 
 logger = logging.getLogger(__name__)
 
-YOU_PROMPT = "\u001b[96m▸ You:\u001b[0m "
-ASSISTANT_PREFIX = "\u001b[92m▸ Assistant:\u001b[0m "
+# Small visual cues keep the REPL feeling alive without changing its behavior.
+YOU_PROMPT = "\u001b[96m◆ You\u001b[0m  "
+ASSISTANT_PREFIX = "\u001b[92m◆ Assistant\u001b[0m  "
 
 
 def _format_message(msg: Dict[str, Any]) -> str:
