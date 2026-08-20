@@ -1,7 +1,9 @@
 """Main entry point and agent loop."""
 
 import argparse
+import base64
 import logging
+import mimetypes
 import os
 import re
 import select
@@ -81,6 +83,124 @@ _KITTY_KEYBOARD_DISABLE = "\u001b[<u"
 # With the Kitty keyboard protocol enabled, Ctrl+C is reported as this CSI
 # sequence rather than the traditional ETX byte (\\x03).
 _CTRL_C_SEQUENCES = ("\u001b[99;5u",)
+_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".tif", ".tiff"}
+_CLIPBOARD_IMAGE_SCRIPT = r'''set outputPath to "/tmp/harness-clipboard-image"
+try
+    set imageData to the clipboard as «class PNGf»
+    set outputPath to outputPath & ".png"
+    set outputFile to open for access POSIX file outputPath with write permission
+    set eof outputFile to 0
+    write imageData to outputFile
+    close access outputFile
+    return outputPath
+on error
+    try
+        close access outputFile
+    end try
+end try
+try
+    set imageData to the clipboard as «class TIFF»
+    set outputPath to outputPath & ".tiff"
+    set outputFile to open for access POSIX file outputPath with write permission
+    set eof outputFile to 0
+    write imageData to outputFile
+    close access outputFile
+    return outputPath
+on error
+    try
+        close access outputFile
+    end try
+end try
+error number 1
+'''
+
+
+def _clipboard_image_part() -> Dict[str, Any]:
+    """Export a macOS clipboard image and return it as an image content part."""
+    if sys.platform != "darwin":
+        raise ValueError("clipboard images are only on macOS")
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", _CLIPBOARD_IMAGE_SCRIPT],
+            capture_output=True, text=True, timeout=0.75, check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ValueError("could not read the macOS clipboard") from exc
+    if result.returncode != 0 or not result.stdout.strip():
+        raise ValueError("no PNG or TIFF image found on the clipboard")
+    path = Path(result.stdout.strip().splitlines()[-1])
+    try:
+        return _image_part(str(path))
+    except (OSError, ValueError) as exc:
+        raise ValueError("could not read the clipboard image") from exc
+    finally:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+
+def _image_part(path_text: str) -> Dict[str, Any]:
+    """Read an image and return an OpenAI-compatible image URL content part."""
+    path = Path(path_text).expanduser().resolve()
+    if path.suffix.lower() not in _IMAGE_EXTENSIONS:
+        raise ValueError("supported image types are .jpg, .jpeg, .png, .gif, .webp, and .tiff")
+    if not path.is_file():
+        raise ValueError(f"image not found: {path_text}")
+    mime = mimetypes.guess_type(path.name)[0]
+    if not mime:
+        if path.suffix.lower() in {".tif", ".tiff"}:
+            mime = "image/tiff"
+        elif path.suffix.lower() in {".jpg", ".jpeg"}:
+            mime = "image/jpeg"
+        elif path.suffix.lower() == ".png":
+            mime = "image/png"
+        elif path.suffix.lower() == ".gif":
+            mime = "image/gif"
+        elif path.suffix.lower() == ".webp":
+            mime = "image/webp"
+        else:
+            mime = "application/octet-stream"
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    return {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{encoded}"}}
+
+
+def _extract_pasted_images(user_input: str) -> Tuple[str, list[Dict[str, Any]]]:
+    """Extract existing image paths pasted or dragged into the terminal.
+
+    Handles unquoted paths, single/double quoted paths, shell-escaped paths
+    (spaces escaped with backslashes), file:// URLs, and surrounding prose
+    regardless of unescaped quotes or apostrophes in the message.
+    """
+    images: list[Dict[str, Any]] = []
+    # Pattern to match candidate file paths or file:// URLs ending in image extensions
+    ext_pattern = "|".join(re.escape(ext.lstrip(".")) for ext in _IMAGE_EXTENSIONS)
+    pattern = re.compile(
+        rf'(?:file://)?(?:"([^"]+\.(?:{ext_pattern}))"|\'([^\']+\.(?:{ext_pattern}))\'|((?:[^\s\'"]|\\ )+\.(?:{ext_pattern})))',
+        re.IGNORECASE,
+    )
+
+    def replace_match(match: re.Match) -> str:
+        raw_path = match.group(1) or match.group(2) or match.group(3)
+        if not raw_path:
+            return match.group(0)
+        # Unescape backslash-escaped characters (like "\ ")
+        clean_path = re.sub(r'\\(.)', r'\1', raw_path)
+        path = Path(clean_path).expanduser().resolve()
+        if path.is_file() and path.suffix.lower() in _IMAGE_EXTENSIONS:
+            try:
+                images.append(_image_part(str(path)))
+                return ""
+            except (OSError, ValueError):
+                return match.group(0)
+        return match.group(0)
+
+    remaining_text = pattern.sub(replace_match, user_input)
+    # Collapse any extra whitespace left behind by removed paths
+    clean_text = " ".join(remaining_text.split()).strip()
+    if not images:
+        return user_input, []
+    return clean_text or "Please inspect the attached image.", images
 
 
 def _is_shift_enter(sequence: str) -> bool:
@@ -242,10 +362,32 @@ def _echo(ch: str) -> None:
     sys.stdout.flush()
 
 
-def _read_input(prompt: str) -> str:
-    """Read one request; bracketed paste keeps newlines as part of the input."""
+def _try_clipboard_image_part() -> Optional[Dict[str, Any]]:
+    """Return a clipboard image when available, without making paste fail."""
+    if sys.platform != "darwin":
+        return None
+    try:
+        return _clipboard_image_part()
+    except (OSError, ValueError):
+        return None
+
+
+def _show_paste_badge(has_text: bool, has_image: bool) -> None:
+    """Show what a bracketed paste contributed without adding it to the input."""
+    badges = []
+    if has_text:
+        badges.append("[text]")
+    if has_image:
+        badges.append("[image]")
+    if badges:
+        sys.stdout.write(" \033[90m%s\033[0m" % " ".join(badges))
+        sys.stdout.flush()
+
+
+def _read_input(prompt: str) -> Tuple[str, list[Dict[str, Any]]]:
+    """Read one request, preserving long bracketed pastes and clipboard images."""
     if not sys.stdin.isatty():
-        return input(prompt)
+        return input(prompt), []
 
     sys.stdout.write(prompt)
     sys.stdout.flush()
@@ -258,6 +400,8 @@ def _read_input(prompt: str) -> str:
         sys.stdout.flush()
 
         buf: list[str] = []
+        pasted_images: list[Dict[str, Any]] = []
+        paste_had_text = False
         pending = ""
         in_paste = False
 
@@ -297,8 +441,14 @@ def _read_input(prompt: str) -> str:
                     if pending == _PASTE_END:
                         pending = ""
                         in_paste = False
+                        image = _try_clipboard_image_part()
+                        if image is not None:
+                            pasted_images.append(image)
+                        _show_paste_badge(paste_had_text, image is not None)
                     continue
                 # Not an end-marker prefix — commit pending as paste content.
+                if pending:
+                    paste_had_text = True
                 for c in pending:
                     buf.append(c)
                     _echo(c)
@@ -327,7 +477,7 @@ def _read_input(prompt: str) -> str:
                 pending = ""
                 sys.stdout.write("\n")
                 sys.stdout.flush()
-                return "".join(buf)
+                return "".join(buf), pasted_images
 
             if pending in ("\x7f", "\x08"):
                 pending = ""
@@ -601,7 +751,9 @@ def _voice_loop(process: Callable[[str], None]) -> None:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 
-def run(initial_request: str = "", reload: bool = False) -> None:
+def run(
+    initial_request: str = "", reload: bool = False,
+) -> None:
     """Run the REPL, optionally resuming the persisted conversation."""
     _banner()
     session_auto_approve = config.auto_approve()
@@ -628,6 +780,7 @@ def run(initial_request: str = "", reload: bool = False) -> None:
     title_generated = session_title is not None
 
     session_registered = resumed
+    pending_images: list[Dict[str, Any]] = []
 
     def persist(register: Optional[bool] = None) -> None:
         nonlocal session_registered
@@ -692,9 +845,9 @@ def run(initial_request: str = "", reload: bool = False) -> None:
         history_path = state_path.with_suffix(".txt")
         persist(register=False)
 
-    def process(user_input: str) -> None:
+    def process(user_input: str, images: Optional[list[Dict[str, Any]]] = None) -> None:
         nonlocal session_auto_approve, context_tokens
-        conversation.append(user_message(user_input))
+        conversation.append(user_message(user_input, images))
         compact()
         persist()
         while True:
@@ -760,20 +913,28 @@ def run(initial_request: str = "", reload: bool = False) -> None:
                            result.get("path") or result.get("file_path") or "ok")
                 print(_tool_status(name, summary))
                 conversation.append(tool_message(call_id, format_tool_result_content(name, result)))
+                if name == "read_image" and result.get("image_url") and not result.get("error"):
+                    conversation.append(user_message(
+                        f"Visual context loaded from {result.get('file_path', 'the image file')}.",
+                        [{"type": "image_url", "image_url": {"url": result["image_url"]}}],
+                    ))
             persist()
 
     if initial_request:
         try:
-            process(initial_request)
-        except RuntimeError as e:
+            initial_request, pasted_images = _extract_pasted_images(initial_request)
+            process(initial_request, pending_images + pasted_images)
+        except (RuntimeError, OSError, ValueError) as e:
             print(f"\033[91m▸ error: {e}\033[0m")
         return
 
     while True:
         try:
-            user_input = _read_input(_prompt())
+            user_input, pasted_images = _read_input(_prompt())
         except (KeyboardInterrupt, EOFError):
             return
+        if pasted_images:
+            pending_images.extend(pasted_images)
         command = user_input.strip().lower()
         if command in {"/quit", "/exit"}:
             return
@@ -820,8 +981,11 @@ def run(initial_request: str = "", reload: bool = False) -> None:
             continue
         if user_input.strip():
             try:
-                process(user_input)
-            except RuntimeError as e:
+                user_input, pasted_images = _extract_pasted_images(user_input)
+                images = pending_images + pasted_images
+                pending_images = []
+                process(user_input, images)
+            except (RuntimeError, OSError, ValueError) as e:
                 print(f"\033[91m▸ error: {e}\033[0m")
 
 

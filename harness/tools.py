@@ -1,8 +1,10 @@
 """Barebones file tools: read, list, edit."""
 
+import base64
 import difflib
 import fnmatch
 import hashlib
+import mimetypes
 import os
 import stat
 import subprocess
@@ -46,6 +48,28 @@ def read_file(filename: str) -> Dict[str, Any]:
     if not full_path.is_file():
         return {"error": f"File not found: {full_path}"}
     return {"file_path": str(full_path), "content": full_path.read_text(encoding="utf-8")}
+
+
+def read_image(filename: str) -> Dict[str, Any]:
+    """Read an image file and return an inline data URL for model context."""
+    try:
+        full_path = resolve_abs_path(filename)
+    except ValueError as e:
+        return {"error": str(e)}
+    if not full_path.is_file():
+        return {"error": f"File not found: {full_path}"}
+    mime = mimetypes.guess_type(full_path.name)[0]
+    if not mime or not mime.startswith("image/"):
+        return {"error": f"Unsupported image type: {full_path.suffix or full_path.name}"}
+    try:
+        encoded = base64.b64encode(full_path.read_bytes()).decode("ascii")
+    except OSError as e:
+        return {"error": f"Could not read image: {e}"}
+    return {
+        "file_path": str(full_path),
+        "mime_type": mime,
+        "image_url": f"data:{mime};base64,{encoded}",
+    }
 
 
 def list_files(path: str = ".") -> Dict[str, Any]:
@@ -341,6 +365,7 @@ def git_branch_list() -> Dict[str, Any]:
 
 ALL_TOOLS = [
     ("read_file", read_file),
+    ("read_image", read_image),
     ("run_command", run_command),
     ("list_files", list_files),
     ("search_files", search_files),

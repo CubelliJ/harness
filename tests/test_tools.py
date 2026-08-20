@@ -226,6 +226,27 @@ class ToolsTestCase(unittest.TestCase):
         result = tools.read_file("example.txt")
         self.assertEqual(result["content"], "hello")
 
+    def test_read_image_returns_inline_data_url(self):
+        image = self.workspace / "pixel.png"
+        image.write_bytes(b"fake-png")
+        result = tools.read_image("pixel.png")
+        self.assertEqual(result["mime_type"], "image/png")
+        self.assertTrue(result["image_url"].startswith("data:image/png;base64,"))
+        self.assertIn("pixel.png", result["file_path"])
+
+    def test_read_image_rejects_non_image_and_missing_required_argument(self):
+        (self.workspace / "notes.txt").write_text("not an image", encoding="utf-8")
+        self.assertIn("Unsupported image", tools.read_image("notes.txt")["error"])
+        self.assertIn("Missing required", execute_tool("read_image", {})["error"])
+
+    def test_registry_formats_read_image_without_exposing_payload(self):
+        image = self.workspace / "pixel.png"
+        image.write_bytes(b"fake-png")
+        result = execute_tool("read_image", {"filename": "pixel.png"})
+        formatted = format_tool_result_content("read_image", result)
+        self.assertIn("Image attached", formatted)
+        self.assertNotIn("base64", formatted)
+
     def test_search_files_honors_gitignore_and_limits_results(self):
         (self.workspace / ".gitignore").write_text("ignored.txt\nignored_dir/\n", encoding="utf-8")
         (self.workspace / "keep.py").write_text("needle\nneedle\n", encoding="utf-8")

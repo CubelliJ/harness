@@ -196,7 +196,14 @@ def generate_conversation_title(conversation: List[Dict[str, Any]]) -> str:
         role = message.get("role")
         if role not in {"user", "assistant"}:
             continue
-        content = str(message.get("content") or "").strip()
+        raw_content = message.get("content")
+        if isinstance(raw_content, list):
+            content = " ".join(
+                str(part.get("text", "")) for part in raw_content
+                if isinstance(part, dict) and part.get("type") == "text"
+            ).strip()
+        else:
+            content = str(raw_content or "").strip()
         if content:
             excerpt.append(f"{role}: {content}")
     prompt = "\n".join(excerpt)[-TITLE_MAX_INPUT_CHARS:]

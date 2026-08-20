@@ -41,6 +41,18 @@ Useful commands:
 - `/voice` — use voice input on macOS
 - `/quit` — exit Harness
 
+Paste or drag an image file into the terminal input and submit normally;
+Harness detects the image path automatically and sends it with that request. In
+an interactive macOS terminal, `Cmd+V` also preserves the pasted text—including
+multiline and long-form text—and checks the same clipboard paste for PNG/TIFF
+image data. If image data is present, it is attached automatically alongside the
+pasted text; if the paste contains only an image, type the request after the
+paste and submit. This depends on the terminal emitting bracketed-paste input;
+terminals that consume image-only pastes without sending an input event cannot
+expose that paste to Harness. Supported image formats are JPEG, PNG, GIF, WebP,
+and TIFF. Images are sent as inline data URLs in the multimodal request and are
+not copied into the workspace.
+
 Shell commands always require confirmation. Readable session transcripts are
 saved in `~/harness_logs/`, and the active conversation state is persisted in
 `~/harness_logs/`. A session is added to the recent-conversations list after its
