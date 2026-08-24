@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.26.0](https://github.com/CubelliJ/harness/compare/v0.25.0...v0.26.0) (2026-08-24)
+
+
+### Features
+
+* support image context in conversations ([fa104ee](https://github.com/CubelliJ/harness/commit/fa104ee51ef659b78e6683ddae0f65224d426d16))
+* support image context in conversations ([9d71752](https://github.com/CubelliJ/harness/commit/9d7175287478f6c8c35c5e1318c8e308a6e17b6e))
+
 ## [0.25.0](https://github.com/CubelliJ/harness/compare/v0.24.0...v0.25.0) (2026-08-24)
 
 
