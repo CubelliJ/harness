@@ -827,7 +827,6 @@ def run(initial_request: str = "", reload: bool = False) -> None:
         nonlocal session_auto_approve, context_tokens
         conversation.append(user_message(user_input))
         interrupted = False
-        print("\033[90m▸ working — press Escape to interrupt\033[0m")
         try:
             _process_turn(user_input)
         except AgentInterrupted:
