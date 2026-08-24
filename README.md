@@ -43,7 +43,9 @@ Useful commands:
 - `/voice` — use voice input on macOS
 - `/quit` — exit Harness
 
-Shell commands always require confirmation. Readable session transcripts are
+Press Escape at any time while the agent is thinking, running a tool, or waiting
+for edit/command approval to interrupt the active turn and return to the prompt
+for feedback. Shell commands always require confirmation. Readable session transcripts are
 saved in `~/harness_logs/`, and the active conversation state is persisted in
 `~/harness_logs/`. A session is added to the recent-conversations list after its
 first human request; empty launches are not listed. Each launch starts a new

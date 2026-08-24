@@ -12,8 +12,12 @@ import termios
 import tty
 import uuid
 import json
+import threading
+import signal
+import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Iterator, Optional, Tuple
 
 from harness import config, get_version
 from harness.config import (
@@ -82,6 +86,121 @@ _KITTY_KEYBOARD_DISABLE = "\u001b[<u"
 # With the Kitty keyboard protocol enabled, Ctrl+C is reported as this CSI
 # sequence rather than the traditional ETX byte (\\x03).
 _CTRL_C_SEQUENCES = ("\u001b[99;5u",)
+
+
+class AgentInterrupted(Exception):
+    """Raised when Escape asks the active agent turn to stop."""
+
+
+def _append_interrupted_tool_results(conversation: list[Dict[str, Any]]) -> None:
+    """Close the latest tool-call turn when Escape abandons execution.
+
+    OpenAI-compatible APIs reject a conversation containing an assistant tool
+    call without a matching tool message.  A synthetic result lets the next
+    user request continue safely instead of failing validation upstream.
+    """
+    assistant_index = None
+    for index in range(len(conversation) - 1, -1, -1):
+        message = conversation[index]
+        if message.get("role") == "assistant" and message.get("tool_calls"):
+            assistant_index = index
+            break
+    if assistant_index is None:
+        return
+    # Only repair a trailing, unfinished tool turn. A later user/assistant
+    # message means this turn was already closed normally.
+    trailing = conversation[assistant_index + 1:]
+    if any(message.get("role") != "tool" for message in trailing):
+        return
+    calls = conversation[assistant_index].get("tool_calls") or []
+    completed = {
+        message.get("tool_call_id")
+        for message in trailing
+        if message.get("role") == "tool"
+    }
+    for index, call in enumerate(calls):
+        call_id = call.get("id") if isinstance(call, dict) else None
+        if not isinstance(call_id, str) or not call_id:
+            call_id = f"interrupted-tool-{index}"
+        if call_id not in completed:
+            conversation.append(tool_message(
+                call_id,
+                json.dumps({"error": "interrupted by user; tool was not run"}),
+            ))
+
+
+@contextmanager
+def _escape_interrupts() -> Iterator[threading.Event]:
+    """Watch for Escape while an LLM request or tool is running.
+
+    Escape is a byte, not a terminal signal. A small reader thread converts it
+    to SIGUSR1 so the main thread can interrupt a blocking network or command
+    call. The watcher is deliberately scoped to active work, so it cannot
+    consume answers typed at confirmation prompts or the main REPL.
+    """
+    if not sys.stdin.isatty() or not hasattr(signal, "SIGUSR1"):
+        yield threading.Event()
+        return
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    stopped = threading.Event()
+    interrupted = threading.Event()
+
+    def handle_escape(_signum: int, _frame: Any) -> None:
+        interrupted.set()
+        raise AgentInterrupted
+
+    def watch() -> None:
+        while not stopped.is_set():
+            ready, _, _ = select.select([fd], [], [], 0.05)
+            if not ready:
+                continue
+            raw = os.read(fd, 1)
+            if raw != b"\x1b":
+                # In normal use no input is expected during active work.
+                continue
+
+            # Escape can arrive as the first byte of a kitty/xterm key
+            # sequence (for example ESC [ 99 ; 5 u for Ctrl+C).  Do not
+            # signal immediately and leave the tail queued for the next REPL
+            # prompt: consume the complete sequence first.  A lone Escape is
+            # still recognized after the short grace period.
+            sequence = bytearray(raw)
+            deadline = time.monotonic() + 0.05
+            while time.monotonic() < deadline:
+                remaining = max(0.0, deadline - time.monotonic())
+                more, _, _ = select.select([fd], [], [], remaining)
+                if not more:
+                    break
+                part = os.read(fd, 1)
+                if not part:
+                    break
+                sequence.extend(part)
+                if part in b"~uabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ":
+                    break
+            interrupted.set()
+            os.kill(os.getpid(), signal.SIGUSR1)
+            return
+
+    previous = signal.signal(signal.SIGUSR1, handle_escape)
+    thread: Optional[threading.Thread] = None
+    try:
+        tty.setcbreak(fd)
+        thread = threading.Thread(target=watch, daemon=True)
+        thread.start()
+        yield interrupted
+    finally:
+        stopped.set()
+        if thread is not None:
+            thread.join(timeout=0.2)
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        signal.signal(signal.SIGUSR1, previous)
+
+
+def _interruptible_call(function: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    """Run provider/tool work while watching the terminal for Escape."""
+    with _escape_interrupts():
+        return function(*args, **kwargs)
 
 
 def _is_shift_enter(sequence: str) -> bool:
@@ -248,7 +367,7 @@ def _banner() -> None:
         f"{dim}   ◌ workspace  {white}{workspace}{reset}\n"
         f"{dim}   ◌ branch     {white}⎇ {_git_branch()}{reset}\n"
         f"{dim}   ────────────────────────────────────────────{reset}\n"
-        f"{cyan}   ◆ ready{reset}  {dim}Type a request · /help for shortcuts · Ctrl+C to exit{reset}\n"
+        f"{cyan}   ◆ ready{reset}  {dim}Type a request · Escape interrupts · /help for shortcuts{reset}\n"
     )
 
 
@@ -424,24 +543,63 @@ def _pause_voice_session() -> None:
         _voice_session = None
 
 
+def _read_confirmation(prompt: str) -> Optional[str]:
+    """Read a confirmation line while allowing Escape to cancel immediately."""
+    if not sys.stdin.isatty():
+        return input(prompt).strip()
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+    try:
+        tty.setcbreak(fd)
+        chars: list[str] = []
+        while True:
+            char = os.read(fd, 1)
+            if not char:
+                raise EOFError
+            if char == b"\x1b":
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+                raise AgentInterrupted
+            if char in (b"\r", b"\n"):
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+                return bytes(chars).decode("utf-8", errors="replace").strip()
+            if char in (b"\x7f", b"\x08"):
+                if chars:
+                    chars.pop()
+                    sys.stdout.write("\b \b")
+                    sys.stdout.flush()
+                continue
+            chars.append(char[0])
+            sys.stdout.write(char.decode("utf-8", errors="replace"))
+            sys.stdout.flush()
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+
 def _confirm_command(command: str) -> Tuple[bool, str]:
     """Require an explicit human approval before running a shell command."""
     _pause_voice_session()
     _drain_pending_input()
     print("\n\033[33mProposed command:\033[0m %s" % command)
     try:
-        answer = input("Run this command? [Y/n] ").strip().lower()
+        answer = _read_confirmation("Run this command? [Y/n] ")
     except (EOFError, KeyboardInterrupt):
         print()
         return False, ""
+    if answer is None:
+        return False, ""
+    answer = answer.lower()
     if answer in {"", "y", "yes"}:
         return True, ""
     try:
-        feedback = input("Feedback (optional): ").strip()
+        feedback = _read_confirmation("Feedback (optional): ")
     except (EOFError, KeyboardInterrupt):
         print()
         feedback = ""
-    return False, feedback
+    return False, feedback or ""
 
 
 def _confirm_edit(result: Dict[str, Any]) -> Tuple[bool, str]:
@@ -453,18 +611,21 @@ def _confirm_edit(result: Dict[str, Any]) -> Tuple[bool, str]:
         diff = _colorize_diff(result["diff"])
         print(diff, end="" if diff.endswith("\n") else "\n")
     try:
-        answer = input("Apply this edit? [Y/n] ").strip().lower()
+        answer = _read_confirmation("Apply this edit? [Y/n] ")
     except (EOFError, KeyboardInterrupt):
         print()
         return False, ""
+    if answer is None:
+        return False, ""
+    answer = answer.lower()
     if answer in {"", "y", "yes"}:
         return True, ""
     try:
-        feedback = input("Feedback (optional): ").strip()
+        feedback = _read_confirmation("Feedback (optional): ")
     except (EOFError, KeyboardInterrupt):
         print()
         feedback = ""
-    return False, feedback
+    return False, feedback or ""
 
 
 def _visible_len(s: str) -> int:
@@ -650,6 +811,10 @@ def run(initial_request: str = "", reload: bool = False) -> None:
             session_title = selected.get("title") if selected else None
     conversation = load_conversation_state(state_path) if reload else None
     resumed = conversation is not None
+    if conversation is not None:
+        # Older interrupted sessions may contain an assistant tool call with
+        # no result. Repair that state before the first resumed provider call.
+        _append_interrupted_tool_results(conversation)
     if conversation is None:
         conversation = [system_message(get_full_system_prompt(config.workspace_root()))]
     title_generated = session_title is not None
@@ -722,11 +887,31 @@ def run(initial_request: str = "", reload: bool = False) -> None:
     def process(user_input: str) -> None:
         nonlocal session_auto_approve, context_tokens
         conversation.append(user_message(user_input))
+        interrupted = False
+        try:
+            _process_turn(user_input)
+        except AgentInterrupted:
+            interrupted = True
+            _append_interrupted_tool_results(conversation)
+            # Modified-key sequences can finish arriving after Escape has
+            # already interrupted the active call. Never expose their tail to
+            # the next request prompt.
+            _drain_pending_input()
+            print("\033[33m▸ interrupted — enter feedback or a new request\033[0m")
+        finally:
+            if interrupted:
+                persist()
+
+    def _process_turn(user_input: str) -> None:
+        _run_turn(user_input)
+
+    def _run_turn(_user_input: str) -> None:
+        nonlocal session_auto_approve, context_tokens
         compact()
         persist()
         while True:
             compact()
-            content, tool_calls, usage = execute_llm_call(conversation)
+            content, tool_calls, usage = _interruptible_call(execute_llm_call, conversation)
             raw_prompt_tokens = usage.get("prompt_tokens")
             if isinstance(raw_prompt_tokens, int) and not isinstance(raw_prompt_tokens, bool):
                 context_tokens = raw_prompt_tokens
@@ -759,30 +944,30 @@ def run(initial_request: str = "", reload: bool = False) -> None:
                     if name == "run_command":
                         approved, feedback = _confirm_command(args.get("command", ""))
                         if approved:
-                            result = execute_tool(name, args)
+                            result = _interruptible_call(execute_tool, name, args)
                         else:
                             result = {"action": "command_rejected"}
                             if feedback:
                                 result["feedback"] = feedback
                     elif name == "edit_file":
                         preview_args = dict(args, apply=False)
-                        result = execute_tool(name, preview_args)
+                        result = _interruptible_call(execute_tool, name, preview_args)
                         if not result.get("error") and result.get("action") != "old_str not found":
                             if config.dry_run():
                                 result["action"] = "dry_run"
                             elif session_auto_approve:
-                                result = execute_tool(name, dict(args, apply=True))
+                                result = _interruptible_call(execute_tool, name, dict(args, apply=True))
                             else:
                                 approved, feedback = _confirm_edit(result)
                                 if approved:
-                                    result = execute_tool(name, dict(args, apply=True))
+                                    result = _interruptible_call(execute_tool, name, dict(args, apply=True))
                                 else:
                                     result["action"] = "edit_rejected"
                                     result.pop("diff", None)
                                     if feedback:
                                         result["feedback"] = feedback
                     else:
-                        result = execute_tool(name, args)
+                        result = _interruptible_call(execute_tool, name, args)
                 summary = (result.get("error") or result.get("action") or
                            result.get("path") or result.get("file_path") or "ok")
                 print(_tool_status(name, summary))
