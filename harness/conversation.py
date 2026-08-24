@@ -15,7 +15,9 @@ ASSISTANT_PREFIX = "\u001b[92m◆ Assistant\u001b[0m  "
 
 def _format_message(msg: Dict[str, Any]) -> str:
     role = msg.get("role", "?")
-    content = msg.get("content") or ""
+    raw_content = msg.get("content")
+    content = (json.dumps(raw_content, ensure_ascii=False, indent=2)
+               if isinstance(raw_content, (list, dict)) else (raw_content or ""))
     extra = ""
     if msg.get("tool_calls"):
         extra = "\n" + json.dumps(msg["tool_calls"], ensure_ascii=False, indent=2)
@@ -135,8 +137,12 @@ def system_message(content: str) -> Dict[str, Any]:
     return {"role": "system", "content": content}
 
 
-def user_message(content: str) -> Dict[str, Any]:
-    return {"role": "user", "content": content.strip()}
+def user_message(content: Any, extra_parts: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    if extra_parts:
+        parts: List[Dict[str, Any]] = [{"type": "text", "text": str(content).strip()}]
+        parts.extend(extra_parts)
+        return {"role": "user", "content": parts}
+    return {"role": "user", "content": str(content).strip()}
 
 
 def assistant_message(
@@ -213,6 +219,17 @@ def estimate_tokens(message: Dict[str, Any]) -> int:
     Four characters per token is intentionally conservative for source code and
     tool output. The fixed overhead accounts for chat message framing.
     """
+    # Image bytes are base64-encoded in data URLs, but provider vision token
+    # accounting is based on the image itself. Keep compaction conservative and
+    # stable by charging the requested fixed estimate instead of payload size.
+    content = message.get("content")
+    if isinstance(content, list) and any(
+        isinstance(part, dict) and part.get("type") in {"image_url", "image"}
+        for part in content
+    ):
+        text_parts = [part.get("text", "") for part in content
+                      if isinstance(part, dict) and part.get("type") == "text"]
+        return 1000 + max(0, (len(" ".join(text_parts)) + 3) // 4) + 4
     payload = json.dumps(message, ensure_ascii=False, separators=(",", ":"))
     return max(1, (len(payload) + 3) // 4 + 4)
 
@@ -241,7 +258,7 @@ def compact_conversation(
     rest = conversation[1:]
     user_boundaries = [
         index for index, message in enumerate(rest)
-        if message.get("role") == "user"
+        if message.get("role") == "user" and not message.get("image_context")
     ]
     # Preserve the newest user turn. Manual compaction removes one older turn;
     # automatic compaction removes as many older turns as the budget requires.

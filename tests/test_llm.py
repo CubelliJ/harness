@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from harness.llm import (
+    _api_messages,
     _is_rate_limited,
     generate_conversation_title,
     get_available_models,
@@ -11,6 +12,11 @@ from harness.llm import (
 
 
 class LlmTestCase(unittest.TestCase):
+    def test_api_messages_preserves_multimodal_user_content(self):
+        image = {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}}
+        messages = _api_messages([{"role": "user", "content": [{"type": "text", "text": "look"}, image]}])
+        self.assertEqual(messages[0]["content"][1], image)
+
     def test_parse_tool_call(self):
         call_id, name, args = parse_tool_call({
             "id": "call-1",
