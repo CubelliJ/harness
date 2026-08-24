@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.25.0](https://github.com/CubelliJ/harness/compare/v0.24.0...v0.25.0) (2026-08-24)
+
+
+### Features
+
+* bound file reads to protect context ([f5b9d52](https://github.com/CubelliJ/harness/commit/f5b9d52ef1df93bd69a83c4e7abbd5bb87c2cc6a))
+* bound git diff output ([fd69f9a](https://github.com/CubelliJ/harness/commit/fd69f9af797f6398c6c2147536bde009dc910360))
+* bound git diff output ([a957494](https://github.com/CubelliJ/harness/commit/a95749498aef6881e4b8b44a0a70c6fa99314ac4))
+
 ## [0.24.0](https://github.com/CubelliJ/harness/compare/v0.23.0...v0.24.0) (2026-08-24)
 
 
