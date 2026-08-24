@@ -183,6 +183,30 @@ class ToolsTestCase(unittest.TestCase):
         self.assertTrue(result["passed"])
         self.assertEqual(result["stdout"], "")
 
+    def test_git_diff_limits_changed_lines_per_file(self):
+        diff = """diff --git a/one.txt b/one.txt
+--- a/one.txt
++++ b/one.txt
+@@ -1,4 +1,4 @@
+-old 1
++new 1
+-old 2
++new 2
+diff --git a/two.txt b/two.txt
+--- a/two.txt
++++ b/two.txt
+@@ -1,2 +1,2 @@
+-old
++new
+"""
+        limited, truncated = tools._limit_diff_per_file(diff, 2)
+        self.assertTrue(truncated)
+        self.assertEqual(limited.count("+new"), 2)
+        self.assertIn("maximum 2 changed lines per file", limited)
+
+    def test_git_diff_rejects_invalid_change_limit(self):
+        self.assertIn("between 1 and 1000", tools.git_diff(max_changes_per_file=0)["error"])
+
     def test_git_diff_reports_empty_staged_diff(self):
         tools.run_command("git init -q && git config user.email test@example.com && git config user.name Test")
         path = self.workspace / "tracked.txt"
@@ -221,10 +245,49 @@ class ToolsTestCase(unittest.TestCase):
         result = tools.run_command("echo ok", timeout=0)
         self.assertIn("error", result)
 
+    def test_read_file_returns_bounded_window_and_pagination(self):
+        (self.workspace / "example.txt").write_text(
+            "".join(f"line {number}\n" for number in range(1, 6)), encoding="utf-8"
+        )
+        result = tools.read_file("example.txt", start_line=2, max_lines=2)
+        self.assertEqual(result["content"], "line 2\nline 3\n")
+        self.assertEqual(result["start_line"], 2)
+        self.assertEqual(result["end_line"], 3)
+        self.assertEqual(result["lines_read"], 2)
+        self.assertTrue(result["has_more"])
+        self.assertEqual(result["next_start_line"], 4)
+
+    def test_read_file_rejects_invalid_pagination(self):
+        (self.workspace / "example.txt").write_text("hello", encoding="utf-8")
+        self.assertIn("positive", tools.read_file("example.txt", start_line=0)["error"])
+        self.assertIn("between", tools.read_file("example.txt", max_lines=1001)["error"])
+
+    def test_read_image_returns_inline_data_url(self):
+        image = self.workspace / "pixel.png"
+        image.write_bytes(b"fake-png")
+        result = tools.read_image("pixel.png")
+        self.assertEqual(result["mime_type"], "image/png")
+        self.assertTrue(result["image_url"].startswith("data:image/png;base64,"))
+        self.assertIn("pixel.png", result["file_path"])
+
+    def test_read_image_rejects_non_image_and_missing_required_argument(self):
+        (self.workspace / "notes.txt").write_text("not an image", encoding="utf-8")
+        self.assertIn("Unsupported image", tools.read_image("notes.txt")["error"])
+        self.assertIn("Missing required", execute_tool("read_image", {})["error"])
+
+    def test_registry_formats_read_image_without_exposing_payload(self):
+        image = self.workspace / "pixel.png"
+        image.write_bytes(b"fake-png")
+        result = execute_tool("read_image", {"filename": "pixel.png"})
+        formatted = format_tool_result_content("read_image", result)
+        self.assertIn("Image attached", formatted)
+        self.assertNotIn("base64", formatted)
+
     def test_read_file_returns_content(self):
         (self.workspace / "example.txt").write_text("hello", encoding="utf-8")
         result = tools.read_file("example.txt")
         self.assertEqual(result["content"], "hello")
+        self.assertFalse(result["has_more"])
 
     def test_search_files_honors_gitignore_and_limits_results(self):
         (self.workspace / ".gitignore").write_text("ignored.txt\nignored_dir/\n", encoding="utf-8")

@@ -1,7 +1,9 @@
 """Barebones file tools: read, list, edit."""
 
+import base64
 import difflib
 import fnmatch
+import mimetypes
 import hashlib
 import os
 import stat
@@ -37,15 +39,72 @@ def resolve_abs_path(path_str: str) -> Path:
     return resolved
 
 
-def read_file(filename: str) -> Dict[str, Any]:
-    """Read a file and return its full content."""
+def read_file(
+    filename: str, start_line: int = 1, max_lines: int = 1000
+) -> Dict[str, Any]:
+    """Read a bounded, one-based line window from a text file.
+
+    Reading is deliberately paginated so a large file cannot consume the
+    conversation context in one tool call. ``search_files`` remains the right
+    tool for locating text anywhere in a large file.
+    """
+    if not isinstance(start_line, int) or isinstance(start_line, bool) or start_line < 1:
+        return {"error": "start_line must be a positive integer"}
+    if not isinstance(max_lines, int) or isinstance(max_lines, bool) or not 1 <= max_lines <= 1000:
+        return {"error": "max_lines must be an integer between 1 and 1000"}
     try:
         full_path = resolve_abs_path(filename)
     except ValueError as e:
         return {"error": str(e)}
     if not full_path.is_file():
         return {"error": f"File not found: {full_path}"}
-    return {"file_path": str(full_path), "content": full_path.read_text(encoding="utf-8")}
+
+    try:
+        with full_path.open("r", encoding="utf-8") as stream:
+            for _ in range(start_line - 1):
+                if not stream.readline():
+                    break
+            lines = []
+            for _ in range(max_lines):
+                line = stream.readline()
+                if not line:
+                    break
+                lines.append(line)
+            has_more = bool(stream.readline())
+    except (OSError, UnicodeDecodeError) as e:
+        return {"error": f"Could not read file: {e}"}
+
+    return {
+        "file_path": str(full_path),
+        "content": "".join(lines),
+        "start_line": start_line,
+        "end_line": start_line + len(lines) - 1 if lines else start_line - 1,
+        "lines_read": len(lines),
+        "has_more": has_more,
+        "next_start_line": start_line + len(lines) if has_more else None,
+    }
+
+
+def read_image(filename: str) -> Dict[str, Any]:
+    """Read a workspace image and return an inline provider data URL."""
+    try:
+        full_path = resolve_abs_path(filename)
+    except ValueError as exc:
+        return {"error": str(exc)}
+    if not full_path.is_file():
+        return {"error": f"File not found: {full_path}"}
+    mime = mimetypes.guess_type(full_path.name)[0]
+    if not mime or not mime.startswith("image/"):
+        return {"error": f"Unsupported image type: {full_path.suffix or full_path.name}"}
+    try:
+        encoded = base64.b64encode(full_path.read_bytes()).decode("ascii")
+    except OSError as exc:
+        return {"error": f"Could not read image: {exc}"}
+    return {
+        "file_path": str(full_path),
+        "mime_type": mime,
+        "image_url": f"data:{mime};base64,{encoded}",
+    }
 
 
 def list_files(path: str = ".") -> Dict[str, Any]:
@@ -308,8 +367,34 @@ def git_status() -> Dict[str, Any]:
     return _git_command(["status", "--short", "--branch"])
 
 
-def git_diff(staged: bool = False, path: str = "") -> Dict[str, Any]:
-    """Return the working-tree or staged diff, optionally for one workspace path."""
+def _limit_diff_per_file(diff: str, limit: int) -> tuple[str, bool]:
+    """Limit added/deleted lines in each file section of a unified diff."""
+    output = []
+    changes = 0
+    truncated = False
+    for line in diff.splitlines(keepends=True):
+        if line.startswith("diff --git "):
+            changes = 0
+        is_change = (line.startswith("+") and not line.startswith("+++")) or (
+            line.startswith("-") and not line.startswith("---")
+        )
+        if is_change:
+            if changes >= limit:
+                truncated = True
+                continue
+            changes += 1
+        output.append(line)
+    if truncated:
+        output.append(f"\n[diff truncated: maximum {limit} changed lines per file]\n")
+    return "".join(output), truncated
+
+
+def git_diff(staged: bool = False, path: str = "", max_changes_per_file: int = 100) -> Dict[str, Any]:
+    """Return the working-tree or staged diff, bounded per file."""
+    if (not isinstance(max_changes_per_file, int)
+            or isinstance(max_changes_per_file, bool)
+            or not 1 <= max_changes_per_file <= 1000):
+        return {"error": "max_changes_per_file must be an integer between 1 and 1000"}
     args = ["diff"] + (["--cached"] if staged else [])
     if path:
         try:
@@ -317,7 +402,13 @@ def git_diff(staged: bool = False, path: str = "") -> Dict[str, Any]:
         except (ValueError, OSError) as exc:
             return {"error": str(exc)}
         args += ["--", relative.as_posix()]
-    return _git_command(args)
+    result = _git_command(args)
+    if result.get("passed") and result.get("stdout"):
+        result["stdout"], limited = _limit_diff_per_file(
+            result["stdout"], max_changes_per_file
+        )
+        result["truncated"] = result.get("truncated", False) or limited
+    return result
 
 
 def git_log(limit: int = 20, path: str = "") -> Dict[str, Any]:
@@ -341,6 +432,7 @@ def git_branch_list() -> Dict[str, Any]:
 
 ALL_TOOLS = [
     ("read_file", read_file),
+    ("read_image", read_image),
     ("run_command", run_command),
     ("list_files", list_files),
     ("search_files", search_files),

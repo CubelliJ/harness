@@ -15,6 +15,7 @@ from harness.conversation import (
     session_state_path,
     system_message,
     compact_conversation,
+    estimate_tokens,
     tool_message,
     user_message,
 )
@@ -54,6 +55,12 @@ class ConversationTestCase(unittest.TestCase):
     def test_conversation_cost_marks_missing_cost_unknown(self):
         summary = conversation_cost([assistant_message("answer", usage={"total_tokens": 3})])
         self.assertIsNone(summary["cost"])
+
+    def test_image_token_estimate_ignores_base64_payload(self):
+        image = {"type": "image_url", "image_url": {"url": "data:image/png;base64," + "A" * 1000000}}
+        estimate = estimate_tokens(user_message("describe", [image]))
+        self.assertGreaterEqual(estimate, 1000)
+        self.assertLess(estimate, 1020)
 
     def test_compact_conversation_preserves_system_and_complete_recent_turn(self):
         conversation = [

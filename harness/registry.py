@@ -47,7 +47,34 @@ OPENAI_TOOLS: List[Dict[str, Any]] = [
                     "filename": {
                         "type": "string",
                         "description": "Path to the file relative to the workspace",
-                    }
+                    },
+                    "start_line": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "One-based first line to read (default: 1)",
+                        "default": 1,
+                    },
+                    "max_lines": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 1000,
+                        "description": "Maximum lines to read (default: 1000)",
+                        "default": 1000,
+                    },
+                },
+                "required": ["filename"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_image",
+            "description": "Read an image file and include it in the model's visual context.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filename": {"type": "string", "description": "Image path relative to the workspace"}
                 },
                 "required": ["filename"],
             },
@@ -131,6 +158,8 @@ OPENAI_TOOLS: List[Dict[str, Any]] = [
         "parameters": {"type": "object", "properties": {
             "staged": {"type": "boolean", "default": False},
             "path": {"type": "string", "description": "Optional workspace-relative path"},
+            "max_changes_per_file": {"type": "integer", "minimum": 1, "maximum": 1000, "default": 100,
+                                     "description": "Maximum added/deleted lines returned per file"},
         }}}},
     {
         "type": "function", "function": {"name": "git_log",
@@ -176,6 +205,7 @@ def execute_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
     required = {
         "load_skill": ("skill",),
         "read_file": ("filename",),
+        "read_image": ("filename",),
         "run_command": ("command",),
         "search_files": ("query",),
         "edit_file": ("path", "old_str", "new_str"),
@@ -187,6 +217,10 @@ def execute_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
         if tool_name == "load_skill":
             return load_skill(args["skill"])
         if tool_name == "read_file":
+            return tool(
+                args["filename"], args.get("start_line", 1), args.get("max_lines", 1000)
+            )
+        if tool_name == "read_image":
             return tool(args["filename"])
         if tool_name == "run_command":
             return tool(args["command"], args.get("timeout", 120))
@@ -203,7 +237,10 @@ def execute_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
             return tool(args["path"], args["old_str"], args["new_str"],
                         apply=args.get("apply", True))
         if tool_name == "git_diff":
-            return tool(args.get("staged", False), args.get("path", ""))
+            return tool(
+                args.get("staged", False), args.get("path", ""),
+                args.get("max_changes_per_file", 100),
+            )
         if tool_name == "git_log":
             return tool(args.get("limit", 20), args.get("path", ""))
         if tool_name in {"git_status", "git_branch_list"}:
@@ -225,11 +262,23 @@ def format_tool_result_content(tool_name: str, result: Dict[str, Any]) -> str:
             "---- SKILL END ----"
         )
     if tool_name == "read_file":
+        pagination = (
+            f"lines={result.get('start_line', '')}-{result.get('end_line', '')} "
+            f"has_more={result.get('has_more', False)} "
+            f"next_start_line={result.get('next_start_line')}\n"
+        )
         return (
             f"file_path={result.get('file_path', '')}\n"
+            f"{pagination}"
             "---- FILE START ----\n"
-            f"{result.get('content', '')}\n"
+            f"{result.get('content', '')}"
             "---- FILE END ----"
+        )
+    if tool_name == "read_image":
+        return (
+            f"file_path={result.get('file_path', '')}\n"
+            f"mime_type={result.get('mime_type', '')}\n"
+            "Image attached to the conversation as visual context."
         )
     if tool_name == "list_files":
         files = result.get("files") or []
