@@ -37,15 +37,50 @@ def resolve_abs_path(path_str: str) -> Path:
     return resolved
 
 
-def read_file(filename: str) -> Dict[str, Any]:
-    """Read a file and return its full content."""
+def read_file(
+    filename: str, start_line: int = 1, max_lines: int = 1000
+) -> Dict[str, Any]:
+    """Read a bounded, one-based line window from a text file.
+
+    Reading is deliberately paginated so a large file cannot consume the
+    conversation context in one tool call. ``search_files`` remains the right
+    tool for locating text anywhere in a large file.
+    """
+    if not isinstance(start_line, int) or isinstance(start_line, bool) or start_line < 1:
+        return {"error": "start_line must be a positive integer"}
+    if not isinstance(max_lines, int) or isinstance(max_lines, bool) or not 1 <= max_lines <= 1000:
+        return {"error": "max_lines must be an integer between 1 and 1000"}
     try:
         full_path = resolve_abs_path(filename)
     except ValueError as e:
         return {"error": str(e)}
     if not full_path.is_file():
         return {"error": f"File not found: {full_path}"}
-    return {"file_path": str(full_path), "content": full_path.read_text(encoding="utf-8")}
+
+    try:
+        with full_path.open("r", encoding="utf-8") as stream:
+            for _ in range(start_line - 1):
+                if not stream.readline():
+                    break
+            lines = []
+            for _ in range(max_lines):
+                line = stream.readline()
+                if not line:
+                    break
+                lines.append(line)
+            has_more = bool(stream.readline())
+    except (OSError, UnicodeDecodeError) as e:
+        return {"error": f"Could not read file: {e}"}
+
+    return {
+        "file_path": str(full_path),
+        "content": "".join(lines),
+        "start_line": start_line,
+        "end_line": start_line + len(lines) - 1 if lines else start_line - 1,
+        "lines_read": len(lines),
+        "has_more": has_more,
+        "next_start_line": start_line + len(lines) if has_more else None,
+    }
 
 
 def list_files(path: str = ".") -> Dict[str, Any]:
