@@ -1,7 +1,26 @@
 import unittest
 
-from harness.main import _context_bar
+from harness.main import _append_interrupted_tool_results, _context_bar
 from harness.terminal import render_markdown
+
+
+class InterruptedToolTurnTests(unittest.TestCase):
+    def test_closes_all_missing_tool_outputs(self):
+        conversation = [
+            {"role": "system", "content": "system"},
+            {"role": "assistant", "content": None, "tool_calls": [
+                {"id": "call-1"}, {"id": "call-2"},
+            ]},
+            {"role": "tool", "tool_call_id": "call-1", "content": "ok"},
+        ]
+        _append_interrupted_tool_results(conversation)
+        self.assertEqual(conversation[-1]["tool_call_id"], "call-2")
+        self.assertIn("interrupted by user", conversation[-1]["content"])
+
+    def test_does_not_change_completed_turn(self):
+        conversation = [{"role": "assistant", "content": "done"}]
+        _append_interrupted_tool_results(conversation)
+        self.assertEqual(len(conversation), 1)
 
 
 class ContextBarTests(unittest.TestCase):

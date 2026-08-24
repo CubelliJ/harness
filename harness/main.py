@@ -14,6 +14,7 @@ import uuid
 import json
 import threading
 import signal
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, Optional, Tuple
@@ -91,6 +92,43 @@ class AgentInterrupted(Exception):
     """Raised when Escape asks the active agent turn to stop."""
 
 
+def _append_interrupted_tool_results(conversation: list[Dict[str, Any]]) -> None:
+    """Close the latest tool-call turn when Escape abandons execution.
+
+    OpenAI-compatible APIs reject a conversation containing an assistant tool
+    call without a matching tool message.  A synthetic result lets the next
+    user request continue safely instead of failing validation upstream.
+    """
+    assistant_index = None
+    for index in range(len(conversation) - 1, -1, -1):
+        message = conversation[index]
+        if message.get("role") == "assistant" and message.get("tool_calls"):
+            assistant_index = index
+            break
+    if assistant_index is None:
+        return
+    # Only repair a trailing, unfinished tool turn. A later user/assistant
+    # message means this turn was already closed normally.
+    trailing = conversation[assistant_index + 1:]
+    if any(message.get("role") != "tool" for message in trailing):
+        return
+    calls = conversation[assistant_index].get("tool_calls") or []
+    completed = {
+        message.get("tool_call_id")
+        for message in trailing
+        if message.get("role") == "tool"
+    }
+    for index, call in enumerate(calls):
+        call_id = call.get("id") if isinstance(call, dict) else None
+        if not isinstance(call_id, str) or not call_id:
+            call_id = f"interrupted-tool-{index}"
+        if call_id not in completed:
+            conversation.append(tool_message(
+                call_id,
+                json.dumps({"error": "interrupted by user; tool was not run"}),
+            ))
+
+
 @contextmanager
 def _escape_interrupts() -> Iterator[threading.Event]:
     """Watch for Escape while an LLM request or tool is running.
@@ -118,12 +156,31 @@ def _escape_interrupts() -> Iterator[threading.Event]:
             if not ready:
                 continue
             raw = os.read(fd, 1)
-            if raw == b"\x1b":
-                interrupted.set()
-                os.kill(os.getpid(), signal.SIGUSR1)
-                return
-            # Preserve non-Escape input for the next prompt where possible.
-            # In normal use no input is expected during active work.
+            if raw != b"\x1b":
+                # In normal use no input is expected during active work.
+                continue
+
+            # Escape can arrive as the first byte of a kitty/xterm key
+            # sequence (for example ESC [ 99 ; 5 u for Ctrl+C).  Do not
+            # signal immediately and leave the tail queued for the next REPL
+            # prompt: consume the complete sequence first.  A lone Escape is
+            # still recognized after the short grace period.
+            sequence = bytearray(raw)
+            deadline = time.monotonic() + 0.05
+            while time.monotonic() < deadline:
+                remaining = max(0.0, deadline - time.monotonic())
+                more, _, _ = select.select([fd], [], [], remaining)
+                if not more:
+                    break
+                part = os.read(fd, 1)
+                if not part:
+                    break
+                sequence.extend(part)
+                if part in b"~uabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ":
+                    break
+            interrupted.set()
+            os.kill(os.getpid(), signal.SIGUSR1)
+            return
 
     previous = signal.signal(signal.SIGUSR1, handle_escape)
     thread: Optional[threading.Thread] = None
@@ -754,6 +811,10 @@ def run(initial_request: str = "", reload: bool = False) -> None:
             session_title = selected.get("title") if selected else None
     conversation = load_conversation_state(state_path) if reload else None
     resumed = conversation is not None
+    if conversation is not None:
+        # Older interrupted sessions may contain an assistant tool call with
+        # no result. Repair that state before the first resumed provider call.
+        _append_interrupted_tool_results(conversation)
     if conversation is None:
         conversation = [system_message(get_full_system_prompt(config.workspace_root()))]
     title_generated = session_title is not None
@@ -831,6 +892,11 @@ def run(initial_request: str = "", reload: bool = False) -> None:
             _process_turn(user_input)
         except AgentInterrupted:
             interrupted = True
+            _append_interrupted_tool_results(conversation)
+            # Modified-key sequences can finish arriving after Escape has
+            # already interrupted the active call. Never expose their tail to
+            # the next request prompt.
+            _drain_pending_input()
             print("\033[33m▸ interrupted — enter feedback or a new request\033[0m")
         finally:
             if interrupted:
