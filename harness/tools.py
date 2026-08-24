@@ -343,8 +343,34 @@ def git_status() -> Dict[str, Any]:
     return _git_command(["status", "--short", "--branch"])
 
 
-def git_diff(staged: bool = False, path: str = "") -> Dict[str, Any]:
-    """Return the working-tree or staged diff, optionally for one workspace path."""
+def _limit_diff_per_file(diff: str, limit: int) -> tuple[str, bool]:
+    """Limit added/deleted lines in each file section of a unified diff."""
+    output = []
+    changes = 0
+    truncated = False
+    for line in diff.splitlines(keepends=True):
+        if line.startswith("diff --git "):
+            changes = 0
+        is_change = (line.startswith("+") and not line.startswith("+++")) or (
+            line.startswith("-") and not line.startswith("---")
+        )
+        if is_change:
+            if changes >= limit:
+                truncated = True
+                continue
+            changes += 1
+        output.append(line)
+    if truncated:
+        output.append(f"\n[diff truncated: maximum {limit} changed lines per file]\n")
+    return "".join(output), truncated
+
+
+def git_diff(staged: bool = False, path: str = "", max_changes_per_file: int = 100) -> Dict[str, Any]:
+    """Return the working-tree or staged diff, bounded per file."""
+    if (not isinstance(max_changes_per_file, int)
+            or isinstance(max_changes_per_file, bool)
+            or not 1 <= max_changes_per_file <= 1000):
+        return {"error": "max_changes_per_file must be an integer between 1 and 1000"}
     args = ["diff"] + (["--cached"] if staged else [])
     if path:
         try:
@@ -352,7 +378,13 @@ def git_diff(staged: bool = False, path: str = "") -> Dict[str, Any]:
         except (ValueError, OSError) as exc:
             return {"error": str(exc)}
         args += ["--", relative.as_posix()]
-    return _git_command(args)
+    result = _git_command(args)
+    if result.get("passed") and result.get("stdout"):
+        result["stdout"], limited = _limit_diff_per_file(
+            result["stdout"], max_changes_per_file
+        )
+        result["truncated"] = result.get("truncated", False) or limited
+    return result
 
 
 def git_log(limit: int = 20, path: str = "") -> Dict[str, Any]:

@@ -183,6 +183,30 @@ class ToolsTestCase(unittest.TestCase):
         self.assertTrue(result["passed"])
         self.assertEqual(result["stdout"], "")
 
+    def test_git_diff_limits_changed_lines_per_file(self):
+        diff = """diff --git a/one.txt b/one.txt
+--- a/one.txt
++++ b/one.txt
+@@ -1,4 +1,4 @@
+-old 1
++new 1
+-old 2
++new 2
+diff --git a/two.txt b/two.txt
+--- a/two.txt
++++ b/two.txt
+@@ -1,2 +1,2 @@
+-old
++new
+"""
+        limited, truncated = tools._limit_diff_per_file(diff, 2)
+        self.assertTrue(truncated)
+        self.assertEqual(limited.count("+new"), 2)
+        self.assertIn("maximum 2 changed lines per file", limited)
+
+    def test_git_diff_rejects_invalid_change_limit(self):
+        self.assertIn("between 1 and 1000", tools.git_diff(max_changes_per_file=0)["error"])
+
     def test_git_diff_reports_empty_staged_diff(self):
         tools.run_command("git init -q && git config user.email test@example.com && git config user.name Test")
         path = self.workspace / "tracked.txt"

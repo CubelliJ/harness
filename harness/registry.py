@@ -144,6 +144,8 @@ OPENAI_TOOLS: List[Dict[str, Any]] = [
         "parameters": {"type": "object", "properties": {
             "staged": {"type": "boolean", "default": False},
             "path": {"type": "string", "description": "Optional workspace-relative path"},
+            "max_changes_per_file": {"type": "integer", "minimum": 1, "maximum": 1000, "default": 100,
+                                     "description": "Maximum added/deleted lines returned per file"},
         }}}},
     {
         "type": "function", "function": {"name": "git_log",
@@ -218,7 +220,10 @@ def execute_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
             return tool(args["path"], args["old_str"], args["new_str"],
                         apply=args.get("apply", True))
         if tool_name == "git_diff":
-            return tool(args.get("staged", False), args.get("path", ""))
+            return tool(
+                args.get("staged", False), args.get("path", ""),
+                args.get("max_changes_per_file", 100),
+            )
         if tool_name == "git_log":
             return tool(args.get("limit", 20), args.get("path", ""))
         if tool_name in {"git_status", "git_branch_list"}:
