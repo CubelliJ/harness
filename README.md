@@ -35,6 +35,8 @@ Useful commands:
 - `/model` — list available OpenRouter models with context windows
 - `/model <number|provider/model-id>` — switch models for the session
 - `/context` — show model context usage
+- `/cost` — show current conversation cost and token usage
+- `/cost last` — show the most recent LLM call cost and token usage
 - `/compact` — manually compact older conversation turns
 - `/clear` — start a fresh conversation while preserving the workspace
 - `/auto-accept` — approve future file edits automatically
