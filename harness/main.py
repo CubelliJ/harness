@@ -121,16 +121,23 @@ def _print_cost(conversation: list[Dict[str, Any]], last: bool = False) -> None:
         return
     if last:
         usage = summary["last_usage"] or {}
+        details = usage.get("prompt_tokens_details")
+        cached = details.get("cached_tokens") if isinstance(details, dict) else None
         cost = usage.get("cost")
-        cost_text = f"${float(cost):.6f}" if cost is not None else "unknown"
+        try:
+            cost_text = f"${float(cost):.6f}" if cost is not None else "unknown"
+        except (TypeError, ValueError):
+            cost_text = "unknown"
         print(f"\033[90m▸ last call: {cost_text} · {_format_tokens(usage.get('prompt_tokens'))} in / "
-              f"{_format_tokens(usage.get('completion_tokens'))} out\033[0m")
+              f"{_format_tokens(usage.get('completion_tokens'))} out · "
+              f"{_format_tokens(cached)} cached\033[0m")
         return
     cost = summary["cost"]
     cost_text = f"${cost:.6f}" if cost is not None else "unknown"
     print(f"\033[90m▸ conversation: {cost_text} · {summary['calls']} calls · "
           f"{_format_tokens(summary['prompt_tokens'])} in / "
-          f"{_format_tokens(summary['completion_tokens'])} out\033[0m")
+          f"{_format_tokens(summary['completion_tokens'])} out · "
+          f"{_format_tokens(summary['cached_input_tokens'])} cached\033[0m")
 
 
 def _format_model_context(model: Dict[str, Any]) -> str:

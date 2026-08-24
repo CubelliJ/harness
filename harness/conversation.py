@@ -168,6 +168,7 @@ def conversation_cost(conversation: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     calls = 0
     prompt_tokens = 0
     completion_tokens = 0
+    cached_input_tokens = 0
     total_tokens = 0
     cost = 0.0
     cost_known = True
@@ -179,6 +180,9 @@ def conversation_cost(conversation: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         calls += 1
         prompt_tokens += _usage_number(usage, "prompt_tokens")
         completion_tokens += _usage_number(usage, "completion_tokens")
+        prompt_details = usage.get("prompt_tokens_details")
+        if isinstance(prompt_details, dict):
+            cached_input_tokens += _usage_number(prompt_details, "cached_tokens")
         total_tokens += _usage_number(usage, "total_tokens")
         raw_cost = usage.get("cost")
         try:
@@ -192,6 +196,7 @@ def conversation_cost(conversation: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         "calls": calls,
         "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
+        "cached_input_tokens": cached_input_tokens,
         "total_tokens": total_tokens,
         "cost": cost if cost_known else None,
         "last_usage": last,

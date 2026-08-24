@@ -33,7 +33,8 @@ class ConversationTestCase(unittest.TestCase):
         conversation = [
             system_message("rules"),
             assistant_message("one", usage={
-                "prompt_tokens": 10, "completion_tokens": 4, "total_tokens": 14,
+                "prompt_tokens": 10, "prompt_tokens_details": {"cached_tokens": 3},
+                "completion_tokens": 4, "total_tokens": 14,
                 "cost": 0.001,
             }),
             assistant_message("two", usage={
@@ -45,6 +46,7 @@ class ConversationTestCase(unittest.TestCase):
         self.assertEqual(summary["calls"], 2)
         self.assertEqual(summary["prompt_tokens"], 30)
         self.assertEqual(summary["completion_tokens"], 10)
+        self.assertEqual(summary["cached_input_tokens"], 3)
         self.assertEqual(summary["total_tokens"], 40)
         self.assertAlmostEqual(summary["cost"], 0.003)
         self.assertEqual(summary["last_usage"]["cost"], 0.002)
