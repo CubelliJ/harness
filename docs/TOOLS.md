@@ -5,7 +5,7 @@ Harness exposes local workspace tools to the model:
 | Tool | Purpose |
 |------|---------|
 | `load_skill` | Load instructions explicitly linked from `AGENTS.md` |
-| `read_file` | Read a file |
+| `read_file` | Read up to 1000 lines from a file, with pagination |
 | `list_files` | List files and directories |
 | `run_command` | Run a shell command, with confirmation |
 | `search_files` | Search text files while honoring `.gitignore` |
