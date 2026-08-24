@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.24.0](https://github.com/CubelliJ/harness/compare/v0.23.0...v0.24.0) (2026-08-24)
+
+
+### Features
+
+* interrupt active agent with Escape ([56f9a0a](https://github.com/CubelliJ/harness/commit/56f9a0a0de9c35b2b68878931c6fc37eaf80e6eb))
+* make agent interruption robust ([827f541](https://github.com/CubelliJ/harness/commit/827f541e6794d754d82228c7dc0af53e4ee5e29c))
+
+
+### Bug Fixes
+
+* handle confirmation input bytes ([18e4347](https://github.com/CubelliJ/harness/commit/18e434788b47413cf5d203f56ce8ce83980a66bf))
+* make escape interruption tool-safe ([717915d](https://github.com/CubelliJ/harness/commit/717915d4779f511f19627b16dee4231fb0983ceb))
+* reduce interruption status noise ([d528598](https://github.com/CubelliJ/harness/commit/d528598d1a121f95e2a56b489d0dd66f159fa8db))
+
+## [0.23.0](https://github.com/CubelliJ/harness/compare/v0.22.1...v0.23.0) (2026-08-24)
+
+
+### Features
+
+* add conversation cost monitoring ([62dc0e3](https://github.com/CubelliJ/harness/commit/62dc0e35a49ea5bb9cde0b87e7c5d2ca2e0cd2ab))
+* add conversation cost monitoring ([df42f2c](https://github.com/CubelliJ/harness/commit/df42f2c184b043ff750ca29b7f386dfe765e9c00))
+* report cached input tokens ([e31ffa7](https://github.com/CubelliJ/harness/commit/e31ffa74b45bb6cb96e96a0fff7b5af9b6e6040d))
+
 ## [0.22.1](https://github.com/CubelliJ/harness/compare/v0.22.0...v0.22.1) (2026-08-20)
 
 
