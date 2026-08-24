@@ -565,7 +565,7 @@ def _read_confirmation(prompt: str) -> Optional[str]:
             if char in (b"\r", b"\n"):
                 sys.stdout.write("\n")
                 sys.stdout.flush()
-                return b"".join(chars).decode("utf-8", errors="replace").strip()
+                return bytes(chars).decode("utf-8", errors="replace").strip()
             if char in (b"\x7f", b"\x08"):
                 if chars:
                     chars.pop()
