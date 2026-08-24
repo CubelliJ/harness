@@ -1,7 +1,9 @@
 """Barebones file tools: read, list, edit."""
 
+import base64
 import difflib
 import fnmatch
+import mimetypes
 import hashlib
 import os
 import stat
@@ -80,6 +82,28 @@ def read_file(
         "lines_read": len(lines),
         "has_more": has_more,
         "next_start_line": start_line + len(lines) if has_more else None,
+    }
+
+
+def read_image(filename: str) -> Dict[str, Any]:
+    """Read a workspace image and return an inline provider data URL."""
+    try:
+        full_path = resolve_abs_path(filename)
+    except ValueError as exc:
+        return {"error": str(exc)}
+    if not full_path.is_file():
+        return {"error": f"File not found: {full_path}"}
+    mime = mimetypes.guess_type(full_path.name)[0]
+    if not mime or not mime.startswith("image/"):
+        return {"error": f"Unsupported image type: {full_path.suffix or full_path.name}"}
+    try:
+        encoded = base64.b64encode(full_path.read_bytes()).decode("ascii")
+    except OSError as exc:
+        return {"error": f"Could not read image: {exc}"}
+    return {
+        "file_path": str(full_path),
+        "mime_type": mime,
+        "image_url": f"data:{mime};base64,{encoded}",
     }
 
 
@@ -408,6 +432,7 @@ def git_branch_list() -> Dict[str, Any]:
 
 ALL_TOOLS = [
     ("read_file", read_file),
+    ("read_image", read_image),
     ("run_command", run_command),
     ("list_files", list_files),
     ("search_files", search_files),

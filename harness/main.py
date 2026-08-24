@@ -972,6 +972,12 @@ def run(initial_request: str = "", reload: bool = False) -> None:
                            result.get("path") or result.get("file_path") or "ok")
                 print(_tool_status(name, summary))
                 conversation.append(tool_message(call_id, format_tool_result_content(name, result)))
+                if name == "read_image" and result.get("image_url") and not result.get("error"):
+                    conversation.append(user_message(
+                        f"Visual context loaded from {result.get('file_path', 'the image file')}.",
+                        [{"type": "image_url", "image_url": {"url": result["image_url"]}}],
+                    ))
+                    conversation[-1]["image_context"] = True
             persist()
 
     if initial_request:

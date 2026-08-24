@@ -262,6 +262,27 @@ diff --git a/two.txt b/two.txt
         self.assertIn("positive", tools.read_file("example.txt", start_line=0)["error"])
         self.assertIn("between", tools.read_file("example.txt", max_lines=1001)["error"])
 
+    def test_read_image_returns_inline_data_url(self):
+        image = self.workspace / "pixel.png"
+        image.write_bytes(b"fake-png")
+        result = tools.read_image("pixel.png")
+        self.assertEqual(result["mime_type"], "image/png")
+        self.assertTrue(result["image_url"].startswith("data:image/png;base64,"))
+        self.assertIn("pixel.png", result["file_path"])
+
+    def test_read_image_rejects_non_image_and_missing_required_argument(self):
+        (self.workspace / "notes.txt").write_text("not an image", encoding="utf-8")
+        self.assertIn("Unsupported image", tools.read_image("notes.txt")["error"])
+        self.assertIn("Missing required", execute_tool("read_image", {})["error"])
+
+    def test_registry_formats_read_image_without_exposing_payload(self):
+        image = self.workspace / "pixel.png"
+        image.write_bytes(b"fake-png")
+        result = execute_tool("read_image", {"filename": "pixel.png"})
+        formatted = format_tool_result_content("read_image", result)
+        self.assertIn("Image attached", formatted)
+        self.assertNotIn("base64", formatted)
+
     def test_read_file_returns_content(self):
         (self.workspace / "example.txt").write_text("hello", encoding="utf-8")
         result = tools.read_file("example.txt")
