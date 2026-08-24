@@ -142,11 +142,60 @@ def user_message(content: str) -> Dict[str, Any]:
 def assistant_message(
     content: Optional[str] = None,
     tool_calls: Optional[List[Dict[str, Any]]] = None,
+    usage: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     msg: Dict[str, Any] = {"role": "assistant", "content": content}
     if tool_calls:
         msg["tool_calls"] = tool_calls
+    if usage:
+        # Usage is metadata for Harness only; llm._api_messages deliberately
+        # omits it when rebuilding provider-compatible messages.
+        msg["usage"] = usage
     return msg
+
+
+def _usage_number(usage: Dict[str, Any], key: str) -> int:
+    value = usage.get(key, 0)
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return number if number >= 0 else 0
+
+
+def conversation_cost(conversation: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    """Aggregate provider-reported usage retained on assistant messages."""
+    calls = 0
+    prompt_tokens = 0
+    completion_tokens = 0
+    total_tokens = 0
+    cost = 0.0
+    cost_known = True
+    last: Optional[Dict[str, Any]] = None
+    for message in conversation:
+        usage = message.get("usage")
+        if not isinstance(usage, dict):
+            continue
+        calls += 1
+        prompt_tokens += _usage_number(usage, "prompt_tokens")
+        completion_tokens += _usage_number(usage, "completion_tokens")
+        total_tokens += _usage_number(usage, "total_tokens")
+        raw_cost = usage.get("cost")
+        try:
+            if raw_cost is None:
+                raise ValueError
+            cost += float(raw_cost)
+        except (TypeError, ValueError):
+            cost_known = False
+        last = usage
+    return {
+        "calls": calls,
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+        "cost": cost if cost_known else None,
+        "last_usage": last,
+    }
 
 
 def tool_message(tool_call_id: str, content: str) -> Dict[str, Any]:

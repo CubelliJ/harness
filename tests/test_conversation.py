@@ -4,6 +4,7 @@ from pathlib import Path
 
 from harness.conversation import (
     assistant_message,
+    conversation_cost,
     conversation_title,
     load_conversation_state,
     load_session_catalog,
@@ -27,6 +28,30 @@ class ConversationTestCase(unittest.TestCase):
         self.assertEqual(tool_message("call-1", "result"), {
             "role": "tool", "tool_call_id": "call-1", "content": "result"
         })
+
+    def test_conversation_cost_aggregates_provider_usage(self):
+        conversation = [
+            system_message("rules"),
+            assistant_message("one", usage={
+                "prompt_tokens": 10, "completion_tokens": 4, "total_tokens": 14,
+                "cost": 0.001,
+            }),
+            assistant_message("two", usage={
+                "prompt_tokens": 20, "completion_tokens": 6, "total_tokens": 26,
+                "cost": 0.002,
+            }),
+        ]
+        summary = conversation_cost(conversation)
+        self.assertEqual(summary["calls"], 2)
+        self.assertEqual(summary["prompt_tokens"], 30)
+        self.assertEqual(summary["completion_tokens"], 10)
+        self.assertEqual(summary["total_tokens"], 40)
+        self.assertAlmostEqual(summary["cost"], 0.003)
+        self.assertEqual(summary["last_usage"]["cost"], 0.002)
+
+    def test_conversation_cost_marks_missing_cost_unknown(self):
+        summary = conversation_cost([assistant_message("answer", usage={"total_tokens": 3})])
+        self.assertIsNone(summary["cost"])
 
     def test_compact_conversation_preserves_system_and_complete_recent_turn(self):
         conversation = [

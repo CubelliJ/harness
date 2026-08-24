@@ -23,6 +23,7 @@ from harness.config import (
 )
 from harness.conversation import (
     compact_conversation,
+    conversation_cost,
     ASSISTANT_PREFIX,
     YOU_PROMPT,
     assistant_message,
@@ -111,6 +112,25 @@ def _print_context(prompt_tokens: Optional[int], context_limit: Optional[int]) -
     # Keep the helper plain for scripts/tests while making the interactive
     # status line a little more luminous.
     print(f"\033[90m▸ context {usage} / {limit} tokens \033[36m{bar}\033[0m")
+
+
+def _print_cost(conversation: list[Dict[str, Any]], last: bool = False) -> None:
+    summary = conversation_cost(conversation)
+    if not summary["calls"]:
+        print("\033[90m▸ no provider usage recorded yet\033[0m")
+        return
+    if last:
+        usage = summary["last_usage"] or {}
+        cost = usage.get("cost")
+        cost_text = f"${float(cost):.6f}" if cost is not None else "unknown"
+        print(f"\033[90m▸ last call: {cost_text} · {_format_tokens(usage.get('prompt_tokens'))} in / "
+              f"{_format_tokens(usage.get('completion_tokens'))} out\033[0m")
+        return
+    cost = summary["cost"]
+    cost_text = f"${cost:.6f}" if cost is not None else "unknown"
+    print(f"\033[90m▸ conversation: {cost_text} · {summary['calls']} calls · "
+          f"{_format_tokens(summary['prompt_tokens'])} in / "
+          f"{_format_tokens(summary['completion_tokens'])} out\033[0m")
 
 
 def _format_model_context(model: Dict[str, Any]) -> str:
@@ -704,7 +724,7 @@ def run(initial_request: str = "", reload: bool = False) -> None:
             if isinstance(raw_prompt_tokens, int) and not isinstance(raw_prompt_tokens, bool):
                 context_tokens = raw_prompt_tokens
             if not tool_calls:
-                conversation.append(assistant_message(content))
+                conversation.append(assistant_message(content, usage=usage))
                 persist()
                 maybe_generate_title()
                 if content:
@@ -712,7 +732,7 @@ def run(initial_request: str = "", reload: bool = False) -> None:
                 return
             if content:
                 print(f"{ASSISTANT_PREFIX}{render_markdown(content)}")
-            conversation.append(assistant_message(content or None, tool_calls=tool_calls))
+            conversation.append(assistant_message(content or None, tool_calls=tool_calls, usage=usage))
             persist()
             for tc in tool_calls:
                 # A malformed model response must become a tool error, not a
@@ -788,6 +808,12 @@ def run(initial_request: str = "", reload: bool = False) -> None:
         if command == "/context":
             _print_context(context_tokens, context_limit)
             continue
+        if command in {"/cost", "/cost conversation"}:
+            _print_cost(conversation)
+            continue
+        if command == "/cost last":
+            _print_cost(conversation, last=True)
+            continue
         if command == "/compact":
             if compact(force=True):
                 print("\033[90m▸ context compacted\033[0m")
@@ -816,7 +842,7 @@ def run(initial_request: str = "", reload: bool = False) -> None:
             print("\033[90m▸ voice mode is off\033[0m")
             continue
         if command in {"/help", "?"}:
-            print("Commands: /model, /model <number|id>, /context, /compact, /clear, /auto-accept, /auto-accept off, /voice, /quit")
+            print("Commands: /model, /model <number|id>, /context, /cost, /cost last, /compact, /clear, /auto-accept, /auto-accept off, /voice, /quit")
             continue
         if user_input.strip():
             try:
