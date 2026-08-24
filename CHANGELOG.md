@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.23.0](https://github.com/CubelliJ/harness/compare/v0.22.1...v0.23.0) (2026-08-24)
+
+
+### Features
+
+* add conversation cost monitoring ([62dc0e3](https://github.com/CubelliJ/harness/commit/62dc0e35a49ea5bb9cde0b87e7c5d2ca2e0cd2ab))
+* add conversation cost monitoring ([df42f2c](https://github.com/CubelliJ/harness/commit/df42f2c184b043ff750ca29b7f386dfe765e9c00))
+* report cached input tokens ([e31ffa7](https://github.com/CubelliJ/harness/commit/e31ffa74b45bb6cb96e96a0fff7b5af9b6e6040d))
+
 ## [0.22.1](https://github.com/CubelliJ/harness/compare/v0.22.0...v0.22.1) (2026-08-20)
 
 
