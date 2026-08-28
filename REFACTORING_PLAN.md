@@ -126,6 +126,33 @@ harness/cli/agent_loop.py 194 lines
 
 Validation after all four transitions: 108 unit tests passed.
 
+### 5. CLI confirmation extraction
+
+Commit: `fe046ef refactor: extract CLI confirmations`
+
+Added:
+
+```text
+harness/cli/confirmations.py
+```
+
+Moved command and edit approval prompts, raw confirmation input, and diff
+colorization out of `harness.main`. The old private helper names remain as
+compatibility wrappers and continue to inject voice-session pausing and pending
+input cleanup.
+
+Current sizes after this transition:
+
+```text
+harness/main.py              494 lines
+harness/cli/confirmations.py 124 lines
+harness/cli/input.py         258 lines
+harness/cli/repl.py          269 lines
+harness/cli/agent_loop.py    194 lines
+```
+
+Validation after all five transitions: 108 unit tests passed.
+
 ## Target structure
 
 ```text
