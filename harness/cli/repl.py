@@ -39,27 +39,28 @@ from harness.llm import (
     filter_models,
 )
 from harness.voice import VoiceSession, ensure_binary, is_supported, normalize_transcript
-from harness.cli.agent_loop import run_turn
+from harness.cli.agent_loop import _append_interrupted_tool_results, run_turn
+from harness.cli.input import (
+    AgentInterrupted,
+    _drain_pending_input,
+    _interruptible_call,
+    _read_input,
+)
 
 logger = logging.getLogger(__name__)
 
 from harness.main import (
-    AgentInterrupted,
-    _append_interrupted_tool_results,
     _confirm_command,
     _confirm_edit,
-    _drain_pending_input,
     _format_tokens,
     _offer_workspace_default,
     _pause_voice_session,
     _print_context,
     _print_cost,
     _prompt,
-    _read_input,
     _select_model,
     _select_saved_session,
     _voice_loop,
-    _interruptible_call,
     _banner,
 )
 

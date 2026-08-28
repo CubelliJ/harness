@@ -1,5 +1,6 @@
 """Provider and tool execution loop for the interactive CLI."""
 
+import json
 import sys
 from typing import Any, Callable, Dict, Optional
 
@@ -23,6 +24,36 @@ ConfirmCommand = Callable[[str], tuple[bool, str]]
 ConfirmEdit = Callable[[Dict[str, Any]], tuple[bool, str]]
 UpdateTokens = Callable[[Optional[int]], None]
 GenerateTitle = Callable[[], None]
+
+
+def _append_interrupted_tool_results(conversation: Conversation) -> None:
+    """Close the latest unfinished tool-call turn after an interruption."""
+    assistant_index = None
+    for index in range(len(conversation) - 1, -1, -1):
+        message = conversation[index]
+        if message.get("role") == "assistant" and message.get("tool_calls"):
+            assistant_index = index
+            break
+    if assistant_index is None:
+        return
+    trailing = conversation[assistant_index + 1:]
+    if any(message.get("role") != "tool" for message in trailing):
+        return
+    calls = conversation[assistant_index].get("tool_calls") or []
+    completed = {
+        message.get("tool_call_id")
+        for message in trailing
+        if message.get("role") == "tool"
+    }
+    for index, call in enumerate(calls):
+        call_id = call.get("id") if isinstance(call, dict) else None
+        if not isinstance(call_id, str) or not call_id:
+            call_id = f"interrupted-tool-{index}"
+        if call_id not in completed:
+            conversation.append(tool_message(
+                call_id,
+                json.dumps({"error": "interrupted by user; tool was not run"}),
+            ))
 
 
 def _tool_status(name: str, summary: str) -> str:
