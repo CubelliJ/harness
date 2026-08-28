@@ -1,4 +1,4 @@
-"""Barebones file tools: read, list, edit."""
+"""Workspace-scoped filesystem tools."""
 
 import base64
 import difflib
@@ -7,14 +7,13 @@ import mimetypes
 import hashlib
 import os
 import stat
-import subprocess
 import tempfile
 from datetime import datetime
 from pathlib import Path
+
 from typing import Any, Dict
 
-from harness.config import workspace_root
-
+import harness.tools as tools
 
 def resolve_abs_path(path_str: str) -> Path:
     """Resolve a path and ensure it remains inside the configured workspace.
@@ -23,7 +22,7 @@ def resolve_abs_path(path_str: str) -> Path:
     and symlinks pointing outside the workspace are rejected. ``strict=False``
     allows ``edit_file`` to create a new file that does not exist yet.
     """
-    root = workspace_root().expanduser().resolve()
+    root = tools.workspace_root().expanduser().resolve()
     path = Path(path_str).expanduser()
     if not path.is_absolute():
         path = root / path
@@ -124,6 +123,7 @@ def list_files(path: str = ".") -> Dict[str, Any]:
     }
 
 
+
 def _load_gitignore(root: Path) -> list[str]:
     """Load simple gitignore patterns from the workspace root."""
     gitignore = root / ".gitignore"
@@ -136,6 +136,7 @@ def _load_gitignore(root: Path) -> list[str]:
         ]
     except (OSError, UnicodeDecodeError):
         return []
+
 
 
 def _gitignored(relative_path: Path, patterns: list[str]) -> bool:
@@ -160,6 +161,7 @@ def _gitignored(relative_path: Path, patterns: list[str]) -> bool:
     return ignored
 
 
+
 def search_files(
     query: str,
     path: str = ".",
@@ -173,7 +175,7 @@ def search_files(
         return {"error": "max_results must be at least 1"}
     try:
         root = resolve_abs_path(path)
-        workspace = workspace_root().resolve()
+        workspace = tools.workspace_root().resolve()
     except ValueError as e:
         return {"error": str(e)}
     if not root.is_dir():
@@ -206,59 +208,6 @@ def search_files(
             continue
     return {"query": query, "matches": matches, "truncated": False}
 
-
-def run_command(command: str, timeout: int = 120) -> Dict[str, Any]:
-    """Run a shell command in the workspace and capture bounded output.
-
-    This is intentionally workspace-scoped, but commands are still arbitrary
-    shell commands. The caller should only expose it in trusted workspaces.
-    """
-    if not isinstance(command, str) or not command.strip():
-        return {"error": "command cannot be empty"}
-    if not isinstance(timeout, int) or isinstance(timeout, bool) or timeout < 1:
-        return {"error": "timeout must be a positive integer"}
-    timeout = min(timeout, 300)
-    cwd = workspace_root().expanduser().resolve()
-    if not cwd.is_dir():
-        return {"error": f"Workspace directory not found: {cwd}"}
-    try:
-        completed = subprocess.run(
-            command,
-            cwd=cwd,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-        stdout = completed.stdout or ""
-        stderr = completed.stderr or ""
-        limit = 20_000
-        return {
-            "command": command,
-            "returncode": completed.returncode,
-            "stdout": stdout[-limit:],
-            "stderr": stderr[-limit:],
-            "truncated": len(stdout) > limit or len(stderr) > limit,
-            "passed": completed.returncode == 0,
-        }
-    except subprocess.TimeoutExpired as exc:
-        stdout = exc.stdout or ""
-        stderr = exc.stderr or ""
-        if isinstance(stdout, bytes):
-            stdout = stdout.decode("utf-8", errors="replace")
-        if isinstance(stderr, bytes):
-            stderr = stderr.decode("utf-8", errors="replace")
-        return {
-            "command": command,
-            "returncode": None,
-            "stdout": stdout[-20_000:],
-            "stderr": stderr[-20_000:],
-            "passed": False,
-            "timed_out": True,
-            "error": f"timed out after {timeout} seconds",
-        }
-    except OSError as exc:
-        return {"command": command, "returncode": None, "passed": False, "error": str(exc)}
 
 
 def edit_preview(path: str, old_str: str, new_str: str) -> Dict[str, Any]:
@@ -294,6 +243,7 @@ def edit_preview(path: str, old_str: str, new_str: str) -> Dict[str, Any]:
     }
 
 
+
 def edit_file(path: str, old_str: str, new_str: str, *, apply: bool = True) -> Dict[str, Any]:
     """Propose an edit, optionally applying it with a backup and atomic replace."""
     preview = edit_preview(path, old_str, new_str)
@@ -309,7 +259,7 @@ def edit_file(path: str, old_str: str, new_str: str, *, apply: bool = True) -> D
     if full_path.exists():
         # Keep recovery copies completely outside the repository. Git remains
         # the durable/versioned history; these are local safety snapshots only.
-        root = workspace_root().expanduser().resolve()
+        root = tools.workspace_root().expanduser().resolve()
         relative = full_path.relative_to(root)
         backup_root = Path(os.environ.get(
             "HARNESS_BACKUP_DIR", "~/.harness/backups"
@@ -341,106 +291,3 @@ def edit_file(path: str, old_str: str, new_str: str, *, apply: bool = True) -> D
     preview.pop("proposed", None)
     return preview
 
-
-def _git_command(args: list[str]) -> Dict[str, Any]:
-    """Run a Git subcommand without invoking a shell."""
-    cwd = workspace_root().expanduser().resolve()
-    if not (cwd / ".git").exists():
-        return {"error": "Workspace is not a Git repository"}
-    try:
-        completed = subprocess.run(
-            ["git", *args], cwd=cwd, capture_output=True, text=True, timeout=30,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return {"error": str(exc)}
-    stdout, stderr = completed.stdout or "", completed.stderr or ""
-    return {
-        "args": args, "returncode": completed.returncode,
-        "stdout": stdout[-20_000:], "stderr": stderr[-20_000:],
-        "passed": completed.returncode == 0,
-        "truncated": len(stdout) > 20_000 or len(stderr) > 20_000,
-    }
-
-
-def git_status() -> Dict[str, Any]:
-    """Return concise working-tree status."""
-    return _git_command(["status", "--short", "--branch"])
-
-
-def _limit_diff_per_file(diff: str, limit: int) -> tuple[str, bool]:
-    """Limit added/deleted lines in each file section of a unified diff."""
-    output = []
-    changes = 0
-    truncated = False
-    for line in diff.splitlines(keepends=True):
-        if line.startswith("diff --git "):
-            changes = 0
-        is_change = (line.startswith("+") and not line.startswith("+++")) or (
-            line.startswith("-") and not line.startswith("---")
-        )
-        if is_change:
-            if changes >= limit:
-                truncated = True
-                continue
-            changes += 1
-        output.append(line)
-    if truncated:
-        output.append(f"\n[diff truncated: maximum {limit} changed lines per file]\n")
-    return "".join(output), truncated
-
-
-def git_diff(staged: bool = False, path: str = "", max_changes_per_file: int = 100) -> Dict[str, Any]:
-    """Return the working-tree or staged diff, bounded per file."""
-    if (not isinstance(max_changes_per_file, int)
-            or isinstance(max_changes_per_file, bool)
-            or not 1 <= max_changes_per_file <= 1000):
-        return {"error": "max_changes_per_file must be an integer between 1 and 1000"}
-    args = ["diff"] + (["--cached"] if staged else [])
-    if path:
-        try:
-            relative = resolve_abs_path(path).relative_to(workspace_root().resolve())
-        except (ValueError, OSError) as exc:
-            return {"error": str(exc)}
-        args += ["--", relative.as_posix()]
-    result = _git_command(args)
-    if result.get("passed") and result.get("stdout"):
-        result["stdout"], limited = _limit_diff_per_file(
-            result["stdout"], max_changes_per_file
-        )
-        result["truncated"] = result.get("truncated", False) or limited
-    return result
-
-
-def git_log(limit: int = 20, path: str = "") -> Dict[str, Any]:
-    """Return recent commits, optionally limited to one workspace path."""
-    if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
-        return {"error": "limit must be a positive integer"}
-    args = ["log", "--oneline", "--decorate", f"-n{min(limit, 100)}"]
-    if path:
-        try:
-            relative = resolve_abs_path(path).relative_to(workspace_root().resolve())
-        except (ValueError, OSError) as exc:
-            return {"error": str(exc)}
-        args += ["--", relative.as_posix()]
-    return _git_command(args)
-
-
-def git_branch_list() -> Dict[str, Any]:
-    """Return local and remote branches with the current branch marked."""
-    return _git_command(["branch", "--all", "--no-color"])
-
-
-ALL_TOOLS = [
-    ("read_file", read_file),
-    ("read_image", read_image),
-    ("run_command", run_command),
-    ("list_files", list_files),
-    ("search_files", search_files),
-    ("edit_file", edit_file),
-    ("git_status", git_status),
-    ("git_diff", git_diff),
-    ("git_log", git_log),
-    ("git_branch_list", git_branch_list),
-]
-
-TOOL_REGISTRY = dict(ALL_TOOLS)

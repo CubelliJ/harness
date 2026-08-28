@@ -1,3 +1,4 @@
+import io
 import sys
 import tempfile
 import time
@@ -6,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from harness.main import _rows_for_voice_line, _visible_len
+from harness.cli.voice_ui import render_voice_line
 from harness.voice import (
     TranscriptAssembler,
     VoiceSession,
@@ -106,6 +108,42 @@ class TranscriptAssemblerTests(unittest.TestCase):
         assembler.handle({"type": "final", "text": "hello"})
         self.assertEqual(assembler.current_text(), "hello")
 
+    def test_partial_replayed_by_new_task_is_not_duplicated(self):
+        assembler = TranscriptAssembler()
+        assembler.handle({"type": "final", "text": "hello world"})
+        assembler.handle({"type": "partial", "text": "hello world"})
+        self.assertEqual(assembler.current_text(), "hello world")
+
+    def test_partial_replayed_with_new_suffix_keeps_suffix(self):
+        assembler = TranscriptAssembler()
+        assembler.handle({"type": "final", "text": "hello world"})
+        assembler.handle({"type": "partial", "text": "hello world again"})
+        self.assertEqual(assembler.current_text(), "hello world again")
+
+    def test_repeated_final_prefix_is_not_duplicated(self):
+        assembler = TranscriptAssembler()
+        assembler.handle({"type": "final", "text": "hello world"})
+        assembler.handle({"type": "final", "text": "hello world again"})
+        self.assertEqual(assembler.current_text(), "hello world again")
+
+    def test_replayed_prefix_ignores_punctuation_and_case(self):
+        assembler = TranscriptAssembler()
+        assembler.handle({"type": "final", "text": "Hello, world."})
+        assembler.handle({"type": "partial", "text": "hello world again"})
+        self.assertEqual(assembler.current_text(), "Hello, world. again")
+
+    def test_partial_replayed_tail_is_not_duplicated(self):
+        assembler = TranscriptAssembler()
+        assembler.handle({"type": "final", "text": "hello world"})
+        assembler.handle({"type": "partial", "text": "world again"})
+        self.assertEqual(assembler.current_text(), "hello world again")
+
+    def test_partial_replayed_leading_phrase_is_not_duplicated(self):
+        assembler = TranscriptAssembler()
+        assembler.handle({"type": "final", "text": "Hello world one"})
+        assembler.handle({"type": "partial", "text": "Hello world, 123 hello hello"})
+        self.assertEqual(assembler.current_text(), "Hello world one 123 hello hello")
+
 
 class VoiceSessionTests(unittest.TestCase):
     def _wait_for(self, session: VoiceSession, expected: str, timeout: float = 2.0) -> str:
@@ -151,6 +189,12 @@ class VoiceSessionTests(unittest.TestCase):
 
 
 class VoiceDisplayTests(unittest.TestCase):
+    def test_render_voice_line_uses_supplied_prompt(self):
+        output = io.StringIO()
+        with patch("harness.cli.voice_ui.sys.stdout", output):
+            render_voice_line("hello", lambda: "prompt> ")
+        self.assertIn("prompt> hello", output.getvalue())
+
     def test_visible_len_ignores_ansi(self):
         self.assertEqual(_visible_len("\033[96m▸ You:\033[0m hello"), len("▸ You: hello"))
 
