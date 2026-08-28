@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.28.1](https://github.com/CubelliJ/harness/compare/v0.28.0...v0.28.1) (2026-08-28)
+
+
+### Bug Fixes
+
+* prevent replayed voice transcript text ([91212ab](https://github.com/CubelliJ/harness/commit/91212abb5b5a77e0d99e8eb79cd9342210db4440))
+
+
+### Documentation
+
+* add module decomposition plan ([88d5179](https://github.com/CubelliJ/harness/commit/88d5179a9cb6c8013ac81be3d577ccc67572c7d0))
+* record cleanup and agent coverage ([14471c8](https://github.com/CubelliJ/harness/commit/14471c82d2ee5181aa9b91238c57812fdb1cede7))
+* record CLI confirmation extraction ([324a18b](https://github.com/CubelliJ/harness/commit/324a18b5abfc5bc859600ff34d8bbef0f4117c34))
+* record REPL extraction ([40b28f7](https://github.com/CubelliJ/harness/commit/40b28f776f8eb942a0ce09df3e0b307224b27b35))
+* record terminal input extraction ([08f36e3](https://github.com/CubelliJ/harness/commit/08f36e372ee6fa214040d11813274623faed8e58))
+* record tools package split ([0ec2a02](https://github.com/CubelliJ/harness/commit/0ec2a02ef1990760e102406cf1522256aaf71eca))
+* record voice UI extraction ([cad42d6](https://github.com/CubelliJ/harness/commit/cad42d65c9b3d4825fbe7b72fc148b2907feb2b9))
+
 ## [0.28.0](https://github.com/CubelliJ/harness/compare/v0.27.0...v0.28.0) (2026-08-28)
 
 
