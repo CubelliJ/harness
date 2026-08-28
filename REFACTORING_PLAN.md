@@ -97,6 +97,35 @@ harness/cli/repl.py   268 lines
 
 Validation after all three transitions: 108 unit tests passed.
 
+### 4. Terminal input extraction
+
+Commit: `f71cacf refactor: extract terminal input handling`
+
+Added:
+
+```text
+harness/cli/input.py
+```
+
+Moved raw terminal input, bracketed-paste handling, modified-key handling,
+Escape interruption, interruptible calls, and pending-input draining out of
+`harness.main`. `harness.main` and `harness.cli.repl` continue to import
+compatibility names from the new module.
+
+The interrupted-tool conversation repair helper remains in
+`harness/cli/agent_loop.py`, where it belongs with agent-turn behavior.
+
+Current sizes after this transition:
+
+```text
+harness/main.py        576 lines
+harness/cli/input.py   258 lines
+harness/cli/repl.py    269 lines
+harness/cli/agent_loop.py 194 lines
+```
+
+Validation after all four transitions: 108 unit tests passed.
+
 ## Target structure
 
 ```text
