@@ -10,3 +10,4 @@ native/stt/harness-stt.app
 build/
 harness_cli.egg-info/
 dist/
+.harness/
