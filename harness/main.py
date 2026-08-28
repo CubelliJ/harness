@@ -56,7 +56,7 @@ from harness.registry import (
     format_tool_result_content,
     get_full_system_prompt,
 )
-from harness.terminal import render_markdown
+from harness.terminal import MarkdownStreamRenderer, render_markdown
 from harness.voice import VoiceSession, ensure_binary, is_supported, normalize_transcript
 
 logger = logging.getLogger(__name__)
@@ -950,6 +950,9 @@ def run(initial_request: str = "", reload: bool = False) -> None:
             _process_turn(user_input)
         except AgentInterrupted:
             interrupted = True
+            # A stream may have already written a complete Markdown line.
+            # Keep the interruption status on its own terminal line.
+            print()
             _append_interrupted_tool_results(conversation)
             # Modified-key sequences can finish arriving after Escape has
             # already interrupted the active call. Never expose their tail to
@@ -969,7 +972,32 @@ def run(initial_request: str = "", reload: bool = False) -> None:
         persist()
         while True:
             compact()
-            content, tool_calls, usage = _interruptible_call(execute_llm_call, conversation)
+            streamed_text = False
+            markdown_renderer = MarkdownStreamRenderer()
+
+            def on_text(fragment: str) -> None:
+                nonlocal streamed_text
+                rendered = markdown_renderer.feed(fragment)
+                if not rendered:
+                    return
+                if not streamed_text:
+                    sys.stdout.write(ASSISTANT_PREFIX)
+                    streamed_text = True
+                sys.stdout.write(rendered)
+                sys.stdout.flush()
+
+            content, tool_calls, usage = _interruptible_call(
+                execute_llm_call, conversation, on_text=on_text
+            )
+            tail = markdown_renderer.finish()
+            if tail:
+                if not streamed_text:
+                    sys.stdout.write(ASSISTANT_PREFIX)
+                    streamed_text = True
+                sys.stdout.write(tail)
+            if streamed_text:
+                sys.stdout.write("\n")
+                sys.stdout.flush()
             raw_prompt_tokens = usage.get("prompt_tokens")
             if isinstance(raw_prompt_tokens, int) and not isinstance(raw_prompt_tokens, bool):
                 context_tokens = raw_prompt_tokens
@@ -977,13 +1005,20 @@ def run(initial_request: str = "", reload: bool = False) -> None:
                 conversation.append(assistant_message(content, usage=usage))
                 persist()
                 maybe_generate_title()
-                if content:
+                if content and not streamed_text:
                     print(f"{ASSISTANT_PREFIX}{render_markdown(content)}")
                 return
-            if content:
+            if content and not streamed_text:
                 print(f"{ASSISTANT_PREFIX}{render_markdown(content)}")
             conversation.append(assistant_message(content or None, tool_calls=tool_calls, usage=usage))
             persist()
+            preflight_error: Optional[str] = None
+            for tc in tool_calls:
+                try:
+                    parse_tool_call(tc)
+                except ValueError as exc:
+                    preflight_error = str(exc)
+                    break
             for tc in tool_calls:
                 # A malformed model response must become a tool error, not a
                 # filesystem operation or a crashed session. Preserve the call
@@ -999,7 +1034,9 @@ def run(initial_request: str = "", reload: bool = False) -> None:
                     args = {}
                     result = {"error": str(exc)}
                 else:
-                    if name == "run_command":
+                    if preflight_error:
+                        result = {"error": f"tool turn rejected: {preflight_error}"}
+                    elif name == "run_command":
                         approved, feedback = _confirm_command(args.get("command", ""))
                         if approved:
                             result = _interruptible_call(execute_tool, name, args)
