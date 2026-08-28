@@ -48,7 +48,7 @@ def clear_voice_display() -> None:
     _voice_display_rows = 1
 
 
-def render_voice_line(text: str) -> None:
+def render_voice_line(text: str, prompt: Callable[[], str]) -> None:
     global _voice_display_rows
     body = normalize_transcript(text) if text else "\033[90m[listening]\033[0m"
     line = prompt() + body
@@ -58,7 +58,7 @@ def render_voice_line(text: str) -> None:
     _voice_display_rows = rows_for_voice_line(line)
 
 
-def wait_voice_keys(session: VoiceSession) -> str:
+def wait_voice_keys(session: VoiceSession, prompt: Callable[[], str]) -> str:
     """Block until Enter, Escape, or Ctrl+C. Return submit, cancel, or interrupt."""
     pending = ""
     last_text: Optional[str] = None
@@ -68,7 +68,7 @@ def wait_voice_keys(session: VoiceSession) -> str:
             raise RuntimeError(crashed)
         text = session.current_text()
         if text != last_text:
-            render_voice_line(text)
+            render_voice_line(text, prompt)
             last_text = text
         ready, _, _ = select.select([sys.stdin], [], [], 0.05)
         if not ready:
@@ -155,7 +155,7 @@ def voice_loop(
 
             tty.setcbreak(fd)
             try:
-                action = wait_voice_keys(session)
+                action = wait_voice_keys(session, prompt)
             except KeyboardInterrupt:
                 action = "interrupt"
             except RuntimeError as exc:

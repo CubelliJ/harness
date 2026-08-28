@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import signal
 import socket
@@ -101,6 +102,66 @@ def normalize_transcript(text: str) -> str:
     return " ".join(str(text).split())
 
 
+def _transcript_tokens(text: str) -> List[str]:
+    """Return punctuation-insensitive words for replay comparisons."""
+    return re.findall(r"\w+", text.casefold())
+
+
+def _strip_replayed_prefix(previous: str, text: str) -> str:
+    """Remove a finalized prefix replayed by a new recognition task."""
+    old_tokens = _transcript_tokens(previous)
+    new_tokens = _transcript_tokens(text)
+    if not old_tokens or len(new_tokens) < len(old_tokens):
+        return text
+    if new_tokens[: len(old_tokens)] != old_tokens:
+        return text
+    return _drop_transcript_tokens(text, len(old_tokens))
+
+
+def _drop_transcript_tokens(text: str, count: int) -> str:
+    """Drop `count` leading words and punctuation from a transcript."""
+    tokens = list(re.finditer(r"\w+", text, re.UNICODE))
+    if not tokens or count > len(tokens):
+        return text
+    end = tokens[count - 1].end()
+    suffix = re.match(r"\W*", text[end:], re.UNICODE)
+    return text[end + (suffix.end() if suffix else 0) :]
+
+
+def _strip_replayed_overlap(previous: str, text: str) -> str:
+    """Remove a repeated tail of `previous` from a new task's hypothesis.
+
+    A restarted Apple task does not always replay the entire finalized text;
+    it may replay only the last few words (for example, ``world again``).
+    """
+    old_tokens = _transcript_tokens(previous)
+    new_tokens = _transcript_tokens(text)
+    limit = min(len(old_tokens), len(new_tokens))
+    for count in range(limit, 0, -1):
+        if old_tokens[-count:] == new_tokens[:count]:
+            return _drop_transcript_tokens(text, count)
+    return text
+
+
+def _strip_replayed_leading_overlap(previous: str, text: str) -> str:
+    """Remove a repeated beginning when a restarted task revises the tail.
+
+    For example, a task may finalize ``Hello world one`` and restart with
+    ``Hello world, 123 ...``. The first two words are replayed, but the new
+    hypothesis is not a prefix of the finalized text.
+    """
+    old_tokens = _transcript_tokens(previous)
+    new_tokens = _transcript_tokens(text)
+    count = 0
+    for old, new in zip(old_tokens, new_tokens):
+        if old != new:
+            break
+        count += 1
+    if count < 2:
+        return text
+    return _drop_transcript_tokens(text, count)
+
+
 def _is_same_utterance(old: str, new: str) -> bool:
     """True when `new` revises `old` rather than starting a fresh phrase."""
     if not old or not new:
@@ -141,6 +202,16 @@ class TranscriptAssembler:
         elif typ == "partial":
             if self._partial and text and not _is_same_utterance(self._partial, text):
                 self._append_final(self._partial)
+            # A newly-created Apple recognition task can replay the words
+            # finalized by the previous task. Keep only the genuinely new
+            # suffix; otherwise the live transcript shows the phrase twice.
+            if self._finals:
+                previous = " ".join(self._finals)
+                text = _strip_replayed_prefix(previous, text)
+                if text == normalize_transcript(event.get("text") or ""):
+                    text = _strip_replayed_overlap(previous, text)
+                    if text == normalize_transcript(event.get("text") or ""):
+                        text = _strip_replayed_leading_overlap(previous, text)
             self._partial = text
 
     def current_text(self) -> str:
@@ -154,8 +225,21 @@ class TranscriptAssembler:
         self._partial = ""
 
     def _append_final(self, text: str) -> None:
-        if text and (not self._finals or self._finals[-1] != text):
+        if not text:
+            return
+        if not self._finals:
             self._finals.append(text)
+            return
+        previous = " ".join(self._finals)
+        # Recognition tasks may finalize the complete hypothesis again after
+        # a restart. Merge that repeated prefix instead of appending it twice,
+        # even when punctuation or capitalization changed in the replay.
+        suffix = _strip_replayed_prefix(previous, text)
+        if suffix != text:
+            if suffix:
+                self._finals.append(suffix)
+            return
+        self._finals.append(text)
 
 
 def _peer_pid(conn: socket.socket) -> Optional[int]:
