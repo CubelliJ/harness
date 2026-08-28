@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.0](https://github.com/CubelliJ/harness/compare/v0.27.0...v0.28.0) (2026-08-28)
+
+
+### Features
+
+* stream responses and render markdown incrementally ([f053dce](https://github.com/CubelliJ/harness/commit/f053dceb9d7dc60e0c1671289c7c6d82f541a6b9))
+
 ## [0.27.0](https://github.com/CubelliJ/harness/compare/v0.26.0...v0.27.0) (2026-08-28)
 
 
