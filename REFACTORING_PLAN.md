@@ -213,6 +213,32 @@ harness/tools/git.py       97 lines
 
 Validation after all seven transitions: 108 unit tests passed.
 
+### 8. Cleanup and direct agent-loop coverage
+
+Commits:
+
+```text
+8b80c90 refactor: remove REPL compatibility dependency
+4c79518 test: cover extracted agent loop
+```
+
+Added `harness/cli/presentation.py` for CLI presentation, model selection, and
+session selection helpers. `harness/cli/repl.py` now imports CLI components
+directly instead of depending on `harness.main`. Compatibility wrappers remain
+in `harness.main` for the historical public/private import surface.
+
+Added `tests/test_agent_loop.py` with direct coverage for:
+
+- Plain assistant responses and usage-token updates
+- Streamed responses without duplicate output
+- Tool execution followed by a final assistant response
+- Command rejection and feedback
+- Malformed tool calls
+- Image visual-context messages
+- Interrupted tool-result repair
+
+Validation after cleanup and coverage additions: 115 unit tests passed.
+
 ## Target structure
 
 ```text
