@@ -153,6 +153,35 @@ harness/cli/agent_loop.py    194 lines
 
 Validation after all five transitions: 108 unit tests passed.
 
+### 6. Voice UI extraction
+
+Commit: `4968e8c refactor: extract voice CLI UI`
+
+Added:
+
+```text
+harness/cli/voice_ui.py
+```
+
+Moved voice-mode terminal interaction, live transcript rendering, terminal row
+calculation, voice key handling, and microphone lifecycle coordination out of
+`harness.main`. The STT process/session implementation remains in
+`harness.voice`. `harness.main` retains compatibility wrappers for the existing
+private display helpers and `_voice_loop` entry point.
+
+Current sizes after this transition:
+
+```text
+harness/main.py              352 lines
+harness/cli/voice_ui.py      193 lines
+harness/cli/confirmations.py 124 lines
+harness/cli/input.py         258 lines
+harness/cli/repl.py          269 lines
+harness/cli/agent_loop.py    194 lines
+```
+
+Validation after all six transitions: 108 unit tests passed.
+
 ## Target structure
 
 ```text
