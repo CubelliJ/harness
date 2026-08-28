@@ -182,6 +182,37 @@ harness/cli/agent_loop.py    194 lines
 
 Validation after all six transitions: 108 unit tests passed.
 
+### 7. Tools package split
+
+Commit: `2bc74bb refactor: split tools into focused modules`
+
+Replaced the monolithic `harness/tools.py` with:
+
+```text
+harness/tools/
+├── __init__.py       # compatibility exports and TOOL_REGISTRY
+├── filesystem.py     # paths, read/list/search/edit/image
+├── shell.py          # run_command
+└── git.py            # Git inspection tools
+```
+
+The historical import surface remains available, including
+`from harness.tools import TOOL_REGISTRY` and the test patch target
+`harness.tools.workspace_root`. Filesystem, shell, and Git implementations
+resolve the facade dynamically so workspace overrides continue to work.
+
+Current sizes after this transition:
+
+```text
+harness/main.py           352 lines
+harness/tools/__init__.py  33 lines
+harness/tools/filesystem.py 293 lines
+harness/tools/shell.py     62 lines
+harness/tools/git.py       97 lines
+```
+
+Validation after all seven transitions: 108 unit tests passed.
+
 ## Target structure
 
 ```text
