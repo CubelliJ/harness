@@ -70,7 +70,32 @@ harness/main.py          1,045 lines
 harness/cli/agent_loop.py  163 lines
 ```
 
-Validation after both transitions: 108 unit tests passed.
+Validation after the first two transitions: 108 unit tests passed.
+
+### 3. REPL/session orchestration extraction
+
+Commit: `02d4897 refactor: extract REPL orchestration`
+
+Added:
+
+```text
+harness/cli/repl.py
+```
+
+Moved session loading, persistence, title generation, compaction, conversation
+clearing, request processing, and REPL command dispatch out of `harness.main`.
+The implementation temporarily imports terminal and confirmation helpers from
+`harness.main`; those are intentionally left for the input, confirmations, and
+voice UI transitions below.
+
+Current size after this transition:
+
+```text
+harness/main.py       847 lines
+harness/cli/repl.py   268 lines
+```
+
+Validation after all three transitions: 108 unit tests passed.
 
 ## Target structure
 
