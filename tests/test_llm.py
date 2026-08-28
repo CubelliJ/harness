@@ -4,6 +4,7 @@ from unittest.mock import patch
 from harness.llm import (
     _api_messages,
     _is_rate_limited,
+    _stream_completion,
     filter_models,
     generate_conversation_title,
     get_available_models,
@@ -17,6 +18,59 @@ class LlmTestCase(unittest.TestCase):
         image = {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}}
         messages = _api_messages([{"role": "user", "content": [{"type": "text", "text": "look"}, image]}])
         self.assertEqual(messages[0]["content"][1], image)
+
+    def test_stream_completion_delivers_text_and_reassembles_tool_calls(self):
+        chunks = [
+            b'data: {"choices":[{"delta":{"content":"Hel"}}]}\n',
+            b'data: {"choices":[{"delta":{"content":"lo"}}]}\n',
+            b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"read_"}}]}}]}\n',
+            b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"file","arguments":"{\\"filename\\":"}}]}}]}\n',
+            b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\"README.md\\"}"}}]}}]}\n',
+            b'data: {"choices":[],"usage":{"prompt_tokens":4,"completion_tokens":2}}\n',
+            b'data: [DONE]\n',
+        ]
+        received = []
+        content, tools, usage = _stream_completion(chunks, received.append)
+        self.assertEqual(content, "Hello")
+        self.assertEqual(received, ["Hel", "lo"])
+        self.assertEqual(tools[0]["function"], {"name": "read_file", "arguments": '{"filename":"README.md"}'})
+        self.assertEqual(usage["prompt_tokens"], 4)
+
+    def test_stream_completion_updates_expanding_repeated_function_name(self):
+        chunks = [
+            b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"read_"}}]}}]}\n',
+            b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"read_file","arguments":"{}"}}]}}]}\n',
+            b'data: [DONE]\n',
+        ]
+        _, tools, _ = _stream_completion(chunks)
+        self.assertEqual(tools[0]["function"]["name"], "read_file")
+
+    def test_stream_completion_allows_empty_completed_response(self):
+        content, tools, usage = _stream_completion([b'data: [DONE]\n'])
+        self.assertEqual((content, tools, usage), ("", [], {}))
+
+    def test_stream_completion_rejects_truncated_stream(self):
+        with self.assertRaisesRegex(RuntimeError, "before \\[DONE\\]"):
+            _stream_completion([b'data: {"choices":[{"delta":{"content":"partial"}}]}\n'])
+
+    def test_stream_completion_rejects_tool_without_id(self):
+        chunks = [
+            b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"read_file","arguments":"{}"}}]}}]}\n',
+            b'data: [DONE]\n',
+        ]
+        with self.assertRaisesRegex(RuntimeError, "without an id"):
+            _stream_completion(chunks)
+
+    def test_stream_completion_handles_interleaved_tool_calls(self):
+        chunks = [
+            b'data: {"choices":[{"delta":{"tool_calls":[{"index":1,"id":"two","function":{"name":"read_file","arguments":"{\\"filename\\":"}}]}}]}\n',
+            b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"one","function":{"name":"list_files","arguments":"{}"}}]}}]}\n',
+            b'data: {"choices":[{"delta":{"tool_calls":[{"index":1,"function":{"arguments":"\\"README.md\\"}"}}]}}]}\n',
+            b'data: [DONE]\n',
+        ]
+        _, tools, _ = _stream_completion(chunks)
+        self.assertEqual([call["id"] for call in tools], ["one", "two"])
+        self.assertEqual(tools[1]["function"]["arguments"], '{"filename":"README.md"}')
 
     def test_parse_tool_call(self):
         call_id, name, args = parse_tool_call({
