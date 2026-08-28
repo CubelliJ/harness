@@ -45,6 +45,7 @@ from harness.conversation import (
 )
 from harness.llm import (
     execute_llm_call,
+    filter_models,
     get_available_models,
     get_model_context_length,
     generate_conversation_title,
@@ -320,37 +321,66 @@ def _select_saved_session(sessions: list[Dict[str, Any]]) -> Optional[Path]:
 
 
 def _select_model(argument: str = "") -> Optional[str]:
-    """List models or select one by number/id for the current session."""
+    """List models, filter by search text, or select one by number/id.
+
+    ``/model`` lists everything, ``/model open`` lists models matching "open",
+    ``/model open 2`` picks the second match, and a bare number or exact
+    provider/model-id still selects from the full catalogue.
+    """
     try:
         models = get_available_models()
     except (OSError, RuntimeError, ValueError, TypeError, json.JSONDecodeError) as exc:
-        print(f"\033[91m▸ model catalogue unavailable: {exc}\033[0m")
+        print(f"\033[91m\u25b8 model catalogue unavailable: {exc}\033[0m")
         return None
     if not models:
-        print("\033[90m▸ OpenRouter returned no models\033[0m")
+        print("\033[90m\u25b8 OpenRouter returned no models\033[0m")
         return None
-    if argument:
-        selected = None
-        if argument.isdigit() and 1 <= int(argument) <= len(models):
-            selected = models[int(argument) - 1]
-        else:
-            selected = next((m for m in models if m["id"].lower() == argument.lower()), None)
-        if selected is None:
-            print("\033[90m▸ enter a model number or exact model id from /model\033[0m")
+    query = argument.strip()
+
+    def _switch(model: Dict[str, Any]) -> str:
+        config.set_model(model["id"])
+        print(f"\033[90m\u25b8 model switched to {model['id']}\033[0m")
+        _offer_workspace_default(model["id"])
+        return model["id"]
+
+    if query.isdigit():
+        if 1 <= int(query) <= len(models):
+            return _switch(models[int(query) - 1])
+        print(f"\033[90m\u25b8 enter a model number 1-{len(models)} or an exact model id\033[0m")
+        return None
+    if query:
+        exact = next((m for m in models if m["id"].lower() == query.lower()), None)
+        if exact is not None:
+            return _switch(exact)
+
+    filter_text = query
+    pick = None
+    parts = query.split()
+    if len(parts) > 1 and parts[-1].isdigit():
+        filter_text = " ".join(parts[:-1])
+        pick = int(parts[-1])
+    if filter_text:
+        models = filter_models(models, filter_text)
+        if not models:
+            print(f"\033[90m\u25b8 no models matching {filter_text!r}\033[0m")
             return None
-        config.set_model(selected["id"])
-        print(f"\033[90m▸ model switched to {selected['id']}\033[0m")
-        _offer_workspace_default(selected["id"])
-        return selected["id"]
+    if pick is not None:
+        if 1 <= pick <= len(models):
+            return _switch(models[pick - 1])
+        print(f"\033[90m\u25b8 choose a model number 1-{len(models)} from /model {filter_text}\033[0m")
+        return None
 
     print("\033[36mAvailable OpenRouter models:\033[0m")
     for index, model in enumerate(models, 1):
         name = model.get("name") or model["id"]
-        print(f"  {index:>3}. {name}  \033[90m{model['id']} · {_format_model_context(model)} tokens\033[0m")
+        print(f"  {index:>3}. {name}  \033[90m{model['id']} \u00b7 {_format_model_context(model)} tokens\033[0m")
     saved_default = config.workspace_model()
     if saved_default:
         print(f"\033[90mWorkspace default: {saved_default}\033[0m")
-    print("\033[90mUse /model <number> or /model <provider/model-id>\033[0m")
+    if query:
+        print(f"\033[90m{len(models)} matching models for {filter_text!r}; pick with /model {filter_text} <number>\033[0m")
+    else:
+        print("\033[90mUse /model <number>, /model <provider/model-id>, or /model <search text>\033[0m")
     return None
 
 
@@ -1068,7 +1098,7 @@ def run(initial_request: str = "", reload: bool = False) -> None:
             print("\033[90m▸ voice mode is off\033[0m")
             continue
         if command in {"/help", "?"}:
-            print("Commands: /model, /model <number|id>, /context, /cost, /cost last, /compact, /clear, /auto-accept, /auto-accept off, /voice, /quit")
+            print("Commands: /model, /model <number|id|search>, /context, /cost, /cost last, /compact, /clear, /auto-accept, /auto-accept off, /voice, /quit")
             continue
         if user_input.strip():
             try:

@@ -4,6 +4,7 @@ from unittest.mock import patch
 from harness.llm import (
     _api_messages,
     _is_rate_limited,
+    filter_models,
     generate_conversation_title,
     get_available_models,
     model_context_length,
@@ -72,6 +73,23 @@ class LlmTestCase(unittest.TestCase):
             {"name": "missing id"},
         ]}
         self.assertEqual([m["id"] for m in get_available_models()], ["a/model", "ignored", "z/model"])
+
+    def test_filter_models_matches_id_and_name(self):
+        models = [
+            {"id": "openai/gpt-5", "name": "OpenAI: GPT-5"},
+            {"id": "z-ai/glm-4.6", "name": "Z.AI: GLM 4.6"},
+            {"id": "mistralai/devstral", "name": "Mistral Devstral"},
+        ]
+        self.assertEqual([m["id"] for m in filter_models(models, "open")], ["openai/gpt-5"])
+        self.assertEqual(
+            [m["id"] for m in filter_models(models, "glm")],
+            ["z-ai/glm-4.6"],
+        )
+        # Search is case-insensitive and also matches the display name.
+        self.assertEqual([m["id"] for m in filter_models(models, "MISTRAL")], ["mistralai/devstral"])
+        # An empty query keeps the full catalogue.
+        self.assertEqual(len(filter_models(models, "  ")), 3)
+        self.assertEqual(filter_models(models, "nope"), [])
 
     def test_is_rate_limited(self):
         self.assertTrue(_is_rate_limited(RuntimeError("OpenRouter error: {'code': 429}")))

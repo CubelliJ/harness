@@ -48,6 +48,22 @@ def get_available_models() -> List[Dict[str, Any]]:
     return sorted(models, key=lambda model: (model.get("name") or model["id"]).lower())
 
 
+def filter_models(models: List[Dict[str, Any]], query: str) -> List[Dict[str, Any]]:
+    """Return models whose id or display name contains the query.
+
+    Matching is case-insensitive on a plain substring, so a short prefix like
+    ``open`` narrows the catalogue to OpenAI and OpenRouter models.
+    """
+    needle = query.strip().lower()
+    if not needle:
+        return list(models)
+    return [
+        model for model in models
+        if needle in model["id"].lower()
+        or needle in str(model.get("name") or "").lower()
+    ]
+
+
 def get_model_context_length() -> Optional[int]:
     """Return the provider-reported context limit for the configured model."""
     try:

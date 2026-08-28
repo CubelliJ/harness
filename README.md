@@ -35,6 +35,9 @@ Useful commands:
 - `/model` — list available OpenRouter models with context windows
 - `/model <number|provider/model-id>` — switch models for the session; optionally
   save the choice as the workspace default in `.harness/config.env`
+- `/model <search>` — filter the catalogue by text, e.g. `/model open` lists
+  OpenAI models and `/model z` lists Z.AI models. Pick a match with
+  `/model z 2`; workspace defaults can be saved from a search pick too.
 - `/context` — show model context usage
 - `/cost` — show current conversation cost and token usage
 - `/cost last` — show the most recent LLM call cost and token usage
