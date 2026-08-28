@@ -39,13 +39,15 @@ def global_config_path() -> Path:
 
 
 def _try_load_dotenv() -> None:
-    """Load global then project config; shell variables always win."""
+    """Load global, project, then workspace config; shell variables always win."""
     # The source checkout .env remains useful during development, but an installed
     # Harness must never depend on the directory where its package was installed.
     candidates = [global_config_path(), Path.cwd() / ".env"]
     source_env = Path(__file__).resolve().parent.parent / ".env"
     if source_env != Path.cwd() / ".env":
         candidates.append(source_env)
+    # Workspace config is most specific, so it overrides the generic .env files.
+    candidates.append(workspace_config_path())
     for path in candidates:
         for key, value in _read_dotenv(path).items():
             os.environ.setdefault(key, value)
@@ -104,6 +106,31 @@ def workspace_root() -> Path:
 
 def get_model() -> str:
     return os.environ.get("OPENROUTER_MODEL", OPENROUTER_MODEL).strip() or OPENROUTER_MODEL
+
+
+def workspace_config_path() -> Path:
+    """Return the workspace-scoped config file inside the workspace .harness directory."""
+    return workspace_root() / ".harness" / "config.env"
+
+
+def save_workspace_model(model: str) -> Path:
+    """Persist a model id as the workspace default.
+
+    Future Harness launches in this workspace start on this model unless
+    OPENROUTER_MODEL is set in the shell environment, which still wins.
+    """
+    value = model.strip()
+    if not value:
+        raise ValueError("model id cannot be empty")
+    path = workspace_config_path()
+    _save_config(path, "OPENROUTER_MODEL", value)
+    os.environ["OPENROUTER_MODEL"] = value
+    return path
+
+
+def workspace_model() -> str:
+    """Return the model saved for this workspace, or an empty string if none."""
+    return _read_dotenv(workspace_config_path()).get("OPENROUTER_MODEL", "")
 
 
 def set_model(model: str) -> None:

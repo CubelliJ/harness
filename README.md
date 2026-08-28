@@ -33,7 +33,8 @@ Useful commands:
 
 - `/help` — show available commands
 - `/model` — list available OpenRouter models with context windows
-- `/model <number|provider/model-id>` — switch models for the session
+- `/model <number|provider/model-id>` — switch models for the session; optionally
+  save the choice as the workspace default in `.harness/config.env`
 - `/context` — show model context usage
 - `/cost` — show current conversation cost and token usage
 - `/cost last` — show the most recent LLM call cost and token usage

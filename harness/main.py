@@ -340,14 +340,42 @@ def _select_model(argument: str = "") -> Optional[str]:
             return None
         config.set_model(selected["id"])
         print(f"\033[90m▸ model switched to {selected['id']}\033[0m")
+        _offer_workspace_default(selected["id"])
         return selected["id"]
 
     print("\033[36mAvailable OpenRouter models:\033[0m")
     for index, model in enumerate(models, 1):
         name = model.get("name") or model["id"]
         print(f"  {index:>3}. {name}  \033[90m{model['id']} · {_format_model_context(model)} tokens\033[0m")
+    saved_default = config.workspace_model()
+    if saved_default:
+        print(f"\033[90mWorkspace default: {saved_default}\033[0m")
     print("\033[90mUse /model <number> or /model <provider/model-id>\033[0m")
     return None
+
+
+def _offer_workspace_default(model_id: str) -> None:
+    """Offer to persist a freshly selected model as this workspace's default."""
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        return
+    if config.workspace_model() == model_id:
+        return
+    try:
+        answer = input(
+            f"Save {model_id} as the default model for this workspace? [y/N]: "
+        ).strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return
+    if answer not in {"y", "yes"}:
+        print("\033[90m▸ keeping the session-only model\033[0m")
+        return
+    try:
+        path = config.save_workspace_model(model_id)
+    except OSError as exc:
+        print(f"\033[91m▸ could not save workspace default: {exc}\033[0m")
+        return
+    print(f"\033[90m▸ saved as workspace default in {path}\033[0m")
 
 
 def _banner() -> None:
