@@ -46,23 +46,19 @@ from harness.cli.input import (
     _interruptible_call,
     _read_input,
 )
-
-logger = logging.getLogger(__name__)
-
-from harness.main import (
-    _confirm_command,
-    _confirm_edit,
+from harness.cli.confirmations import confirm_command, confirm_edit
+from harness.cli.presentation import (
+    _banner,
     _format_tokens,
-    _offer_workspace_default,
-    _pause_voice_session,
     _print_context,
     _print_cost,
     _prompt,
     _select_model,
     _select_saved_session,
-    _voice_loop,
-    _banner,
 )
+from harness.cli.voice_ui import pause_voice_session, voice_loop
+
+logger = logging.getLogger(__name__)
 
 def run_repl(initial_request: str = "", reload: bool = False) -> None:
     """Run the REPL, optionally resuming the persisted conversation."""
@@ -189,8 +185,16 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
             compact=compact,
             persist=persist,
             maybe_generate_title=maybe_generate_title,
-            confirm_command=_confirm_command,
-            confirm_edit=_confirm_edit,
+            confirm_command=lambda command: confirm_command(
+                command,
+                pause_voice_session=pause_voice_session,
+                drain_pending_input=_drain_pending_input,
+            ),
+            confirm_edit=lambda result: confirm_edit(
+                result,
+                pause_voice_session=pause_voice_session,
+                drain_pending_input=_drain_pending_input,
+            ),
             interruptible_call=_interruptible_call,
             update_tokens=_update_context_tokens,
         )
@@ -251,7 +255,11 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
             continue
         if command == "/voice":
             try:
-                _voice_loop(process)
+                voice_loop(
+                    process,
+                    prompt=_prompt,
+                    drain_pending_input=_drain_pending_input,
+                )
             except KeyboardInterrupt:
                 return
             continue
