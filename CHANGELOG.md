@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.27.0](https://github.com/CubelliJ/harness/compare/v0.26.0...v0.27.0) (2026-08-28)
+
+
+### Features
+
+* add text search to the /model command ([dcc2adc](https://github.com/CubelliJ/harness/commit/dcc2adcb391464dac5a239502df8f656d2b9b856))
+* allow saving a workspace default model from /model ([4450c55](https://github.com/CubelliJ/harness/commit/4450c55534538606546c63c88c519587e4b171cf))
+* persist and search workspace models ([64e91d1](https://github.com/CubelliJ/harness/commit/64e91d1440da6f259736d97b89b4641a24fdbd90))
+
 ## [0.26.0](https://github.com/CubelliJ/harness/compare/v0.25.0...v0.26.0) (2026-08-24)
 
 
