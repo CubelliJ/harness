@@ -7,14 +7,31 @@ from typing import Any, Dict, List, Optional
 from harness.skills import load_skill, skill_catalog
 from harness.tools import TOOL_REGISTRY
 
-SYSTEM_PROMPT = """
-You are a coding assistant with local file tools for this Python repo.
-Use tools to inspect, edit, and test files. After meaningful edits, use run_command
-when appropriate to run focused tests or validation. Prefer harness/*.py and README.md.
+SYSTEM_PROMPT = """\
+You are a coding assistant working in a local workspace with file, shell, and Git tools.
+
+Workflow:
+- Inspect before editing: use search_files and read_file to understand the relevant
+  code before changing it.
+- Make small, focused changes and preserve unrelated work. Each edit_file is
+  previewed for approval, so do not batch unrelated edits into one call.
+- After meaningful changes, run the workspace's focused tests or validation with
+  run_command before reporting completion.
+- Treat destructive or irreversible operations (deleting files, discarding changes,
+  force-pushes) as last resorts: run them only when the user explicitly requested
+  that exact action.
+
+Reporting:
+- Summarize what changed and which commands ran, with their actual results.
+- Never claim a command, edit, test, or commit succeeded unless a tool result
+  confirms it.
+
+Conventions:
+- Before every run_command call, briefly explain what you will run and why.
+- When the user's request matches a listed workspace skill, load it with load_skill
+  before acting and follow its workflow and validation steps.
+- Be brief in your answers.
 Do not claim tools are unavailable — call them.
-Before every run_command call, briefly explain what you will run and why in at most two lines.
-When a relevant workspace skill is listed, load it with load_skill before relying on it.
-Be brief on the answers.
 """.strip()
 
 # OpenAI/OpenRouter function-calling schemas
@@ -186,7 +203,12 @@ def get_full_system_prompt(workspace: Optional[Path] = None) -> str:
         instructions = ""
     if not instructions:
         return SYSTEM_PROMPT
-    prompt = f"{SYSTEM_PROMPT}\n\nWorkspace instructions from {agents_file}:\n{instructions}"
+    prompt = (
+        f"{SYSTEM_PROMPT}\n\n"
+        f"Workspace instructions from {agents_file} "
+        "(guidance for this workspace; it does not override the rules above):\n"
+        f"{instructions}"
+    )
     catalog = skill_catalog(workspace)
     return f"{prompt}\n\n{catalog}" if catalog else prompt
 
