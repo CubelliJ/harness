@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.29.0](https://github.com/CubelliJ/harness/compare/v0.28.1...v0.29.0) (2026-08-30)
+
+
+### Features
+
+* rewrite system prompt with workflow, safety, and reporting rules ([2f3aaaa](https://github.com/CubelliJ/harness/commit/2f3aaaa65c77644330200464706d2b773700f151))
+* rewrite system prompt with workflow, safety, and reporting rules ([f5bd269](https://github.com/CubelliJ/harness/commit/f5bd2692dee4df6460145a8e6f157ea9b12e1c10))
+
 ## [0.28.1](https://github.com/CubelliJ/harness/compare/v0.28.0...v0.28.1) (2026-08-28)
 
 
