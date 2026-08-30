@@ -5,7 +5,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 from harness import tools
-from harness.registry import execute_tool, format_tool_result_content, get_full_system_prompt
+from harness.registry import (
+    OPENAI_TOOLS,
+    SYSTEM_PROMPT,
+    TOOL_REGISTRY,
+    execute_tool,
+    format_tool_result_content,
+    get_full_system_prompt,
+)
 from harness.skills import load_skill, parse_skill_references, skill_catalog
 
 
@@ -34,6 +41,15 @@ class ToolsTestCase(unittest.TestCase):
 
     def test_system_prompt_ignores_missing_agents_file(self):
         self.assertEqual(get_full_system_prompt(self.workspace), get_full_system_prompt())
+
+    def test_openai_tool_schemas_match_executable_tools(self):
+        schema_names = {item["function"]["name"] for item in OPENAI_TOOLS}
+        executable = set(TOOL_REGISTRY) | {"load_skill"}
+        self.assertEqual(schema_names, executable)
+
+    def test_system_prompt_references_core_workflow_tools(self):
+        for name in ("search_files", "read_file", "edit_file", "run_command", "load_skill"):
+            self.assertIn(name, SYSTEM_PROMPT)
 
     def test_skill_references_are_parsed_without_loading_contents(self):
         references = parse_skill_references(
