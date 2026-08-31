@@ -16,7 +16,7 @@ python -m harness configure
 | Variable | Default | Meaning |
 |----------|---------|---------|
 | `OPENROUTER_API_KEY` | — | Required API key |
-| `OPENROUTER_MODEL` | `openai/gpt-5.6-luna` | OpenRouter model id |
+| `OPENROUTER_MODEL` | `openai/gpt-5.6-luna` | OpenRouter model id. Can also be saved per workspace with `/model` (stored in `.harness/config.env`); shell environment wins over the saved value |
 | `HARNESS_WORKSPACE` | current directory | Workspace root |
 | `HARNESS_LOGS_DIR` | `~/harness_logs` | Session history directory |
 | `HARNESS_HISTORY_FILE` | generated path | Specific history path |

@@ -56,8 +56,145 @@ def _inline(text: str, color: bool) -> str:
 
 def _inline_emphasis(text: str) -> str:
     text = re.sub(r"\*\*(.+?)\*\*|__(.+?)__", lambda m: f"{_BOLD}{m.group(1) or m.group(2)}{_RESET}", text)
-    text = re.sub(r"(?<!\*)\*([^*\n]+?)\*(?!\*)|(?<!_)_([^_\n]+?)_(?!_)", lambda m: f"{_ITALIC}{m.group(1) or m.group(2)}{_RESET}", text)
+    text = re.sub(
+        r"(?<!\*)\*([^*\n]+?)\*(?!\*)|(?<![\w_])_([^_\n]+?)_(?![\w_])",
+        lambda m: f"{_ITALIC}{m.group(1) or m.group(2)}{_RESET}",
+        text,
+    )
     return text
+
+
+class MarkdownStreamRenderer:
+    """Render Markdown incrementally while retaining ambiguous fragments.
+
+    A complete line is still the safest unit for block Markdown.  For a
+    partial line, however, delaying ordinary prose makes streamed responses
+    appear frozen.  We therefore emit partial text unless it could still
+    become a heading, list, fence, code span, or emphasis span.  Ambiguous
+    fragments are kept intact so styling is never split across two writes.
+    """
+
+    def __init__(self, color: Optional[bool] = None) -> None:
+        self.color = colors_enabled() if color is None else color
+        self._pending = ""
+        self._in_code = False
+        self._fence = ""
+
+    @staticmethod
+    def _has_incomplete_inline(text: str) -> bool:
+        """Return whether *text* ends with Markdown needing more input."""
+        # An unfinished code span is unambiguously unsafe to render yet.
+        backticks = re.findall(r"(?<!\\)`+", text)
+        if len(backticks) % 2:
+            return True
+
+        # Ignore escaped punctuation and code spans while looking for emphasis.
+        plain = re.sub(r"(?<!\\)`+[^`\n]*`+", "", text)
+        plain = re.sub(r"\\([*_`])", "", plain)
+        if plain.count("**") % 2 or plain.count("__") % 2:
+            return True
+        # A single delimiter is considered incomplete only when it starts a
+        # word/span at the end of the fragment; this avoids buffering prose
+        # such as "2 * 3".
+        if re.search(r"\d\s+\*$", plain):
+            return True
+        if re.search(r"(?<![\*])\*\S[^*\n]*$|(?<![\*])\*$", plain):
+            return True
+        if re.search(r"(?<![\w_])_[^_\n]*$|(?<![\w_])_$", plain):
+            return True
+        # An underscore that appears to close emphasis may instead be part of
+        # an identifier (``_name_next``). Wait for the following character so
+        # the word-boundary rule in _inline_emphasis can decide correctly.
+        if re.search(r"\w_$", plain):
+            return True
+        return False
+
+    def _incomplete_inline_start(self, text: str) -> Optional[int]:
+        """Return the first delimiter that may need more input."""
+        if re.search(r"\d\s+\*$", text):
+            return None
+        if not self._has_incomplete_inline(text):
+            return None
+        candidates = []
+        for marker in ("**", "__", "*", "_"):
+            index = text.find(marker)
+            if index >= 0 and not (index and text[index - 1] == "\\"):
+                candidates.append(index)
+        return min(candidates) if candidates else 0
+
+    def _partial_is_block(self, text: str) -> bool:
+        """Whether a partial line must be retained for block rendering."""
+        if self._in_code:
+            # Code content must stay together until its newline. Flushing a
+            # partial code line through _inline() loses the code styling and
+            # leaves an empty styled line when the newline arrives.
+            return True
+        return bool(
+            _FENCE_RE.match(text)
+            or re.match(r"^\s*(```*|~~~*)$", text)
+            or re.match(r"^\s{0,3}#{1,6}(?:\s+.*)?$", text)
+            or re.match(r"^\s*(?:[-*+]\s*|\d+[.)]\s*)", text)
+            or re.match(r"^\s*\d+(?:\s+)?$", text)
+            or re.match(r"^\s*\d+\s+\*", text)
+            or text.lstrip().startswith(">")
+            or re.match(r"^\s*(?:[-*_]\s*){1,3}$", text)
+        )
+
+    def _partial_is_ambiguous(self, text: str) -> bool:
+        """Whether a no-newline fragment must remain buffered."""
+        # Check block prefixes first: a lone ``#`` or ``*`` may be the start
+        # of a heading/list, not an inline delimiter to flush.
+        return self._partial_is_block(text) or self._has_incomplete_inline(text)
+
+    def _render_line(self, line: str) -> str:
+        ending = "\n" if line.endswith("\n") else ""
+        body = line[:-1] if ending else line
+        if body.endswith("\r"):
+            body = body[:-1]
+        match = _FENCE_RE.match(body)
+        if match:
+            marker = match.group(1)
+            if not self._in_code:
+                self._in_code = True
+                self._fence = marker[0]
+                label = f" {match.group(2).strip()}" if match.group(2).strip() else ""
+                rendered = f"{_DIM}┌─ code{label} ─┐{_RESET}" if self.color else f"┌─ code{label} ─┐"
+            elif marker[0] == self._fence:
+                self._in_code = False
+                rendered = f"{_DIM}└{'─' * 12}┘{_RESET}" if self.color else f"└{'─' * 12}┘"
+            else:
+                rendered = body
+            return rendered + ending
+        if self._in_code:
+            return (f"{_CODE}{body}{_RESET}" if self.color else body) + ending
+        return render_markdown(body + ending, color=self.color)
+
+    def feed(self, text: str) -> str:
+        self._pending += text
+        lines = self._pending.splitlines(keepends=True)
+        self._pending = ""
+        if lines and not lines[-1].endswith(("\n", "\r")):
+            self._pending = lines.pop()
+
+        rendered = "".join(self._render_line(line) for line in lines)
+        if self._pending:
+            if self._partial_is_ambiguous(self._pending):
+                # Block syntax must remain whole; otherwise a heading or list
+                # can be written literally before its newline arrives.
+                start = None if self._partial_is_block(self._pending) else self._incomplete_inline_start(self._pending)
+                if start is not None and start > 0:
+                    rendered += _inline(self._pending[:start], self.color)
+                    self._pending = self._pending[start:]
+            else:
+                fragment, self._pending = self._pending, ""
+                rendered += _inline(fragment, self.color)
+        return rendered
+
+    def finish(self) -> str:
+        if not self._pending:
+            return ""
+        pending, self._pending = self._pending, ""
+        return self._render_line(pending)
 
 
 def render_markdown(text: str, color: Optional[bool] = None) -> str:

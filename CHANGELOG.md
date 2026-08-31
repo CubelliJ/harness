@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.29.0](https://github.com/CubelliJ/harness/compare/v0.28.1...v0.29.0) (2026-08-30)
+
+
+### Features
+
+* rewrite system prompt with workflow, safety, and reporting rules ([2f3aaaa](https://github.com/CubelliJ/harness/commit/2f3aaaa65c77644330200464706d2b773700f151))
+* rewrite system prompt with workflow, safety, and reporting rules ([f5bd269](https://github.com/CubelliJ/harness/commit/f5bd2692dee4df6460145a8e6f157ea9b12e1c10))
+
+## [0.28.1](https://github.com/CubelliJ/harness/compare/v0.28.0...v0.28.1) (2026-08-28)
+
+
+### Bug Fixes
+
+* prevent replayed voice transcript text ([91212ab](https://github.com/CubelliJ/harness/commit/91212abb5b5a77e0d99e8eb79cd9342210db4440))
+
+
+### Documentation
+
+* add module decomposition plan ([88d5179](https://github.com/CubelliJ/harness/commit/88d5179a9cb6c8013ac81be3d577ccc67572c7d0))
+* record cleanup and agent coverage ([14471c8](https://github.com/CubelliJ/harness/commit/14471c82d2ee5181aa9b91238c57812fdb1cede7))
+* record CLI confirmation extraction ([324a18b](https://github.com/CubelliJ/harness/commit/324a18b5abfc5bc859600ff34d8bbef0f4117c34))
+* record REPL extraction ([40b28f7](https://github.com/CubelliJ/harness/commit/40b28f776f8eb942a0ce09df3e0b307224b27b35))
+* record terminal input extraction ([08f36e3](https://github.com/CubelliJ/harness/commit/08f36e372ee6fa214040d11813274623faed8e58))
+* record tools package split ([0ec2a02](https://github.com/CubelliJ/harness/commit/0ec2a02ef1990760e102406cf1522256aaf71eca))
+* record voice UI extraction ([cad42d6](https://github.com/CubelliJ/harness/commit/cad42d65c9b3d4825fbe7b72fc148b2907feb2b9))
+
+## [0.28.0](https://github.com/CubelliJ/harness/compare/v0.27.0...v0.28.0) (2026-08-28)
+
+
+### Features
+
+* stream responses and render markdown incrementally ([f053dce](https://github.com/CubelliJ/harness/commit/f053dceb9d7dc60e0c1671289c7c6d82f541a6b9))
+
+## [0.27.0](https://github.com/CubelliJ/harness/compare/v0.26.0...v0.27.0) (2026-08-28)
+
+
+### Features
+
+* add text search to the /model command ([dcc2adc](https://github.com/CubelliJ/harness/commit/dcc2adcb391464dac5a239502df8f656d2b9b856))
+* allow saving a workspace default model from /model ([4450c55](https://github.com/CubelliJ/harness/commit/4450c55534538606546c63c88c519587e4b171cf))
+* persist and search workspace models ([64e91d1](https://github.com/CubelliJ/harness/commit/64e91d1440da6f259736d97b89b4641a24fdbd90))
+
 ## [0.26.0](https://github.com/CubelliJ/harness/compare/v0.25.0...v0.26.0) (2026-08-24)
 
 

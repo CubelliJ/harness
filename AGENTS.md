@@ -1,5 +1,10 @@
 # Repository instructions
 
+## Scope
+
+This is the harness repository. Prefer investigating harness/*.py and README.md
+when the task concerns harness itself; include tests/ when behavior changes.
+
 ## Skills
 
 - Create a new feature: [create_feature](.harness/skills/create_feature.md)

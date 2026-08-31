@@ -73,6 +73,9 @@ final class Transcriber {
     private var tapInstalled = false
 
     private var lastHypothesis = ""
+    // Speech recognition callbacks can arrive after a task has been cancelled.
+    // Ignore those late callbacks so an automatic restart cannot replay text.
+    private var requestGeneration = 0
 
     var supportsOnDevice: Bool { recognizer.supportsOnDeviceRecognition }
 
@@ -115,6 +118,7 @@ final class Transcriber {
 
     func stop() {
         stopping = true
+        requestGeneration += 1
         flushHypothesis()
         task?.cancel()
         task = nil
@@ -139,6 +143,8 @@ final class Transcriber {
         task = nil
         request?.endAudio()
 
+        requestGeneration += 1
+        let generation = requestGeneration
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
         request.taskHint = .dictation
@@ -151,7 +157,7 @@ final class Transcriber {
         self.request = request
 
         task = recognizer.recognitionTask(with: request) { [weak self] result, error in
-            guard let self, !self.stopping else { return }
+            guard let self, !self.stopping, generation == self.requestGeneration else { return }
             if let result {
                 self.emitHypothesis(result.bestTranscription.formattedString, isFinal: result.isFinal)
                 if result.isFinal {

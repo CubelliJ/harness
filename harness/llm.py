@@ -48,6 +48,22 @@ def get_available_models() -> List[Dict[str, Any]]:
     return sorted(models, key=lambda model: (model.get("name") or model["id"]).lower())
 
 
+def filter_models(models: List[Dict[str, Any]], query: str) -> List[Dict[str, Any]]:
+    """Return models whose id or display name contains the query.
+
+    Matching is case-insensitive on a plain substring, so a short prefix like
+    ``open`` narrows the catalogue to OpenAI and OpenRouter models.
+    """
+    needle = query.strip().lower()
+    if not needle:
+        return list(models)
+    return [
+        model for model in models
+        if needle in model["id"].lower()
+        or needle in str(model.get("name") or "").lower()
+    ]
+
+
 def get_model_context_length() -> Optional[int]:
     """Return the provider-reported context limit for the configured model."""
     try:
@@ -115,15 +131,106 @@ def _api_messages(conversation: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 
+def _stream_completion(
+    response: Any,
+    on_text: Optional[Any] = None,
+) -> Tuple[str, List[Dict[str, Any]], Dict[str, Any]]:
+    """Consume an SSE response fully, emit text fragments, and assemble tool calls."""
+    content_parts: List[str] = []
+    tool_calls: Dict[int, Dict[str, Any]] = {}
+    usage: Dict[str, Any] = {}
+    completed = False
+    finish_reason: Optional[str] = None
+    def emit(text: str) -> None:
+        if on_text is not None:
+            on_text(text)
+
+    for raw_line in response:
+        line = raw_line.decode("utf-8", errors="replace") if isinstance(raw_line, bytes) else raw_line
+        line = line.strip()
+        if not line or not line.startswith("data:"):
+            continue
+        data = line[5:].strip()
+        if data == "[DONE]":
+            completed = True
+            break
+        try:
+            chunk = json.loads(data)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"OpenRouter returned invalid stream data: {exc.msg}") from exc
+        if chunk.get("error"):
+            raise RuntimeError(f"OpenRouter error: {chunk['error']}")
+        if chunk.get("usage"):
+            usage = chunk["usage"]
+        choices = chunk.get("choices") or []
+        if not choices:
+            continue
+        choice = choices[0]
+        if choice.get("finish_reason") is not None:
+            finish_reason = choice["finish_reason"]
+        delta = choice.get("delta") or {}
+        text = delta.get("content")
+        if isinstance(text, str) and text:
+            content_parts.append(text)
+            emit(text)
+        for call in delta.get("tool_calls") or []:
+            index = call.get("index", 0)
+            if not isinstance(index, int):
+                raise RuntimeError("OpenRouter returned an invalid tool call index")
+            target = tool_calls.setdefault(index, {"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
+            if call.get("id"):
+                target["id"] = call["id"]
+            if call.get("type"):
+                target["type"] = call["type"]
+            function = call.get("function") or {}
+            name_fragment = function.get("name")
+            current_name = target["function"]["name"]
+            if name_fragment:
+                # Providers normally send the name once, but some repeat the
+                # full name or its prefix on later deltas. Only append a
+                # fragment when it extends the name already accumulated.
+                if not current_name:
+                    target["function"]["name"] = name_fragment
+                elif name_fragment.startswith(current_name):
+                    target["function"]["name"] = name_fragment
+                elif current_name.startswith(name_fragment):
+                    pass
+                else:
+                    target["function"]["name"] += name_fragment
+            arguments = function.get("arguments")
+            if arguments is not None and not isinstance(arguments, str):
+                raise RuntimeError("OpenRouter returned non-string tool arguments")
+            if arguments:
+                target["function"]["arguments"] += arguments
+
+    if not completed:
+        raise RuntimeError("OpenRouter stream ended before [DONE]")
+    ordered_tools = [tool_calls[index] for index in sorted(tool_calls)]
+    if finish_reason == "tool_calls" and not ordered_tools:
+        raise RuntimeError("OpenRouter finished with tool calls but returned none")
+    seen_ids = set()
+    for call in ordered_tools:
+        call_id = call.get("id")
+        function = call.get("function") or {}
+        if not isinstance(call_id, str) or not call_id.strip():
+            raise RuntimeError("OpenRouter returned a tool call without an id")
+        if call_id in seen_ids:
+            raise RuntimeError("OpenRouter returned duplicate tool call ids")
+        if not isinstance(function.get("name"), str) or not function["name"].strip():
+            raise RuntimeError("OpenRouter returned a tool call without a function name")
+        seen_ids.add(call_id)
+    return "".join(content_parts), ordered_tools, usage
+
+
 def execute_llm_call(
     conversation: List[Dict[str, Any]],
+    on_text: Optional[Any] = None,
 ) -> Tuple[str, List[Dict[str, Any]], Dict[str, Any]]:
-    """
-    Non-streaming chat completion with native tools.
+    """Stream a chat completion with native tools.
 
-    Returns (assistant_text, tool_calls, usage). ``usage`` contains the
-    provider-reported token counts, including ``prompt_tokens`` for context.
-    Retries transient OpenRouter rate limits with exponential backoff.
+    ``on_text`` receives each text fragment as it arrives. The returned tuple
+    remains compatible with the previous client API, while streaming keeps
+    the CLI responsive during long generations.
     """
     model = get_model()
     payload = json.dumps(
@@ -132,46 +239,44 @@ def execute_llm_call(
             "messages": _api_messages(conversation),
             "tools": OPENAI_TOOLS,
             "tool_choice": "auto",
-            "stream": False,
+            "stream": True,
+            "stream_options": {"include_usage": True},
         }
     ).encode()
     t0 = time.perf_counter()
     last_error: Optional[BaseException] = None
+    emitted = False
 
     for attempt in range(MAX_RETRIES):
         request = urllib.request.Request(
             OPENROUTER_CHAT_URL, data=payload, method="POST", headers=_headers()
         )
         try:
+            def forward_text(fragment: str) -> None:
+                nonlocal emitted
+                emitted = True
+                if on_text is not None:
+                    on_text(fragment)
+
             with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_S) as response:
-                body = json.loads(response.read().decode("utf-8"))
+                content, tool_calls, usage = _stream_completion(response, forward_text)
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", errors="replace")
             last_error = RuntimeError(f"OpenRouter HTTP {e.code}: {detail}")
-            if e.code == 429 and attempt < MAX_RETRIES - 1:
+            if e.code == 429 and not emitted and attempt < MAX_RETRIES - 1:
                 wait = _retry_after_s(attempt)
                 print(f"\033[90m▸ rate limited; retrying in {wait:.0f}s…\033[0m")
                 time.sleep(wait)
                 continue
             raise last_error from e
-
-        if body.get("error"):
-            last_error = RuntimeError(f"OpenRouter error: {body['error']}")
-            if _is_rate_limited(last_error) and attempt < MAX_RETRIES - 1:
+        except RuntimeError as exc:
+            last_error = exc
+            if _is_rate_limited(exc) and not emitted and attempt < MAX_RETRIES - 1:
                 wait = _retry_after_s(attempt)
                 print(f"\033[90m▸ rate limited; retrying in {wait:.0f}s…\033[0m")
                 time.sleep(wait)
                 continue
-            raise last_error
-
-        choices = body.get("choices") or []
-        if not choices:
-            raise RuntimeError(f"OpenRouter: empty choices: {body!r}")
-
-        message = choices[0].get("message") or {}
-        content = message.get("content") or ""
-        tool_calls = message.get("tool_calls") or []
-        usage = body.get("usage") or {}
+            raise
 
         logger.debug(
             "OpenRouter OK in %.2fs chars=%d tool_calls=%d",
