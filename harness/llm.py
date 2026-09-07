@@ -24,6 +24,7 @@ MAX_RETRIES = 5
 RETRY_BASE_S = 2.0
 TITLE_MAX_INPUT_CHARS = 1200
 TITLE_MAX_OUTPUT_TOKENS = 16
+COMPACTION_MAX_OUTPUT_TOKENS = 1200
 
 
 def _models_response() -> Dict[str, Any]:
@@ -288,6 +289,50 @@ def execute_llm_call(
 
     assert last_error is not None
     raise last_error
+
+
+def summarize_conversation(
+    conversation: List[Dict[str, Any]],
+) -> Tuple[str, Dict[str, Any]]:
+    """Create a compact handover while preserving the conversation as cacheable input.
+
+    The existing messages are sent unchanged and the instruction is appended as
+    a new user message. Providers can therefore reuse the prior conversation's
+    cached input rather than paying to process an unrelated excerpt.
+    """
+    messages = _api_messages(conversation)
+    messages.append({
+        "role": "user",
+        "content": (
+            "Prepare a concise handover for another coding agent continuing this task. "
+            "Capture the user's goal, decisions, relevant files and code changes, "
+            "current implementation state, unresolved issues, and the next concrete "
+            "steps. Preserve important names, commands, constraints, and test results. "
+            "Return only the handover summary in Markdown; do not make tool calls."
+        ),
+    })
+    payload = json.dumps({
+        "model": get_model(),
+        "messages": messages,
+        "tools": [],
+        "tool_choice": "none",
+        "max_tokens": COMPACTION_MAX_OUTPUT_TOKENS,
+        "stream": False,
+    }).encode()
+    request = urllib.request.Request(
+        OPENROUTER_CHAT_URL, data=payload, method="POST", headers=_headers()
+    )
+    with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_S) as response:
+        body = json.loads(response.read().decode("utf-8"))
+    if body.get("error"):
+        raise RuntimeError(f"OpenRouter error: {body['error']}")
+    choice = (body.get("choices") or [{}])[0]
+    content = (choice.get("message") or {}).get("content")
+    summary = str(content or "").strip()
+    if not summary:
+        raise RuntimeError("OpenRouter returned an empty compaction summary")
+    usage = body.get("usage") if isinstance(body.get("usage"), dict) else {}
+    return summary, usage
 
 
 def generate_conversation_title(conversation: List[Dict[str, Any]]) -> str:

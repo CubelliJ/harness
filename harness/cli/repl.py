@@ -36,6 +36,7 @@ from harness.llm import (
     get_available_models,
     get_model_context_length,
     generate_conversation_title,
+    summarize_conversation,
     filter_models,
 )
 from harness.voice import VoiceSession, ensure_binary, is_supported, normalize_transcript
@@ -135,7 +136,12 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
         return min(CONTEXT_COMPACTION_CAP, int(context_limit * CONTEXT_COMPACTION_RATIO))
 
     def compact(force: bool = False) -> bool:
-        changed = compact_conversation(conversation, compaction_budget(), force=force)
+        changed = compact_conversation(
+            conversation,
+            compaction_budget(),
+            force=force,
+            summarize=summarize_conversation,
+        )
         if changed:
             persist()
         return changed
