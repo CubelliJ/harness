@@ -1,16 +1,27 @@
+---
+name: create-skill
+description: Create or update repository skills as Agent Skills. Use when adding, defining, or improving a reusable skill, especially when its SKILL.md metadata, directory layout, AGENTS.md registration, or validation needs attention.
+---
+
 # Create a skill
 
 Use this workflow when asked to create, add, or define a repository skill.
 
 ## How skills work in this repository
 
-Skills are Markdown files containing reusable instructions. They are lazy-loaded:
-only skills linked from the workspace `AGENTS.md` are included in the available
-skill catalog, and their full contents are loaded only when the assistant calls
-`load_skill`.
+Skills follow the Agent Skills format: each skill is a directory containing a
+`SKILL.md` file with YAML frontmatter and Markdown instructions. Skills are
+lazy-loaded: only skills linked from the workspace `AGENTS.md` are included in
+the available skill catalog, and their full contents are loaded only when the
+assistant calls `load_skill`.
 
-Skills must be listed in a single `## Skills` section in `AGENTS.md`. Use the
-canonical skill name as the link text, without adding the word "skill":
+Use lowercase kebab-case for the skill directory and frontmatter `name`; they
+must match. Include a non-empty `description` in the frontmatter that explains
+what the skill does and when to use it.
+
+Skills must be listed in a single `## Skills` section in `AGENTS.md`. Link to
+the directory's `SKILL.md` and use the canonical skill name as the link text,
+without adding the word "skill":
 
 ```markdown
 ## Skills

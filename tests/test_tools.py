@@ -53,31 +53,33 @@ class ToolsTestCase(unittest.TestCase):
 
     def test_skill_references_are_parsed_without_loading_contents(self):
         references = parse_skill_references(
-            "[Testing](.harness/skills/testing.md) [External](https://example.com/a.md) "
-            "[Testing again](.harness/skills/testing.md#section)"
+            "[Testing](.harness/skills/testing/SKILL.md) "
+            "[Legacy](.harness/skills/testing.md) "
+            "[External](https://example.com/a.md) "
+            "[Testing again](.harness/skills/testing/SKILL.md#section)"
         )
         self.assertEqual([(item.name, item.path) for item in references], [
-            ("Testing", ".harness/skills/testing.md"),
+            ("Testing", ".harness/skills/testing/SKILL.md"),
         ])
 
     def test_system_prompt_contains_skill_catalog_not_skill_contents(self):
         (self.workspace / "AGENTS.md").write_text(
-            "Use skills: [Testing](skills/testing.md)", encoding="utf-8"
+            "Use skills: [Testing](skills/testing/SKILL.md)", encoding="utf-8"
         )
-        skills = self.workspace / "skills"
-        skills.mkdir()
-        (skills / "testing.md").write_text("secret testing instructions", encoding="utf-8")
+        skills = self.workspace / "skills" / "testing"
+        skills.mkdir(parents=True)
+        (skills / "SKILL.md").write_text("secret testing instructions", encoding="utf-8")
         prompt = get_full_system_prompt(self.workspace)
-        self.assertIn("Testing: skills/testing.md", prompt)
+        self.assertIn("Testing: skills/testing/SKILL.md", prompt)
         self.assertNotIn("secret testing instructions", prompt)
 
     def test_load_skill_requires_active_reference_and_loads_by_name(self):
         (self.workspace / "AGENTS.md").write_text(
-            "[Testing](skills/testing.md)", encoding="utf-8"
+            "[Testing](skills/testing/SKILL.md)", encoding="utf-8"
         )
-        skills = self.workspace / "skills"
-        skills.mkdir()
-        (skills / "testing.md").write_text("run the tests", encoding="utf-8")
+        skills = self.workspace / "skills" / "testing"
+        skills.mkdir(parents=True)
+        (skills / "SKILL.md").write_text("run the tests", encoding="utf-8")
         result = load_skill("Testing", self.workspace)
         self.assertEqual(result["content"], "run the tests")
         self.assertIn("run the tests", format_tool_result_content("load_skill", result))
@@ -90,9 +92,11 @@ class ToolsTestCase(unittest.TestCase):
             (outside / "secret.md").write_text("secret", encoding="utf-8")
             skills = self.workspace / "skills"
             skills.mkdir()
-            (skills / "secret.md").symlink_to(outside / "secret.md")
+            skill_dir = skills / "secret"
+            skill_dir.mkdir()
+            (skill_dir / "SKILL.md").symlink_to(outside / "secret.md")
             (self.workspace / "AGENTS.md").write_text(
-                "[Secret](skills/secret.md)", encoding="utf-8"
+                "[Secret](skills/secret/SKILL.md)", encoding="utf-8"
             )
             result = load_skill("Secret", self.workspace)
             self.assertIn("escapes", result["error"])

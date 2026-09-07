@@ -1,3 +1,8 @@
+---
+name: pull-request
+description: Prepare and open a pull request with branch checks, validation, Conventional Commits, and GitHub CLI. Use when asked to create, open, or prepare a pull request.
+---
+
 # Pull request
 
 Use this workflow when asked to create, open, or prepare a pull request.

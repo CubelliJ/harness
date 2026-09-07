@@ -1,4 +1,4 @@
-.PHONY: run configure test install install-user uninstall
+.PHONY: run configure test validate-skills install install-user uninstall
 
 PYTHON ?= python3
 HARNESS_HOME ?= $(HOME)/.harness
@@ -13,6 +13,9 @@ configure:
 
 test:
 	$(PYTHON) -m unittest discover -s tests -v
+
+validate-skills:
+	$(PYTHON) scripts/validate_skills.py
 
 # Use a private environment so Homebrew/macOS PEP 668 restrictions are avoided.
 # The user never needs to activate it; the launcher points directly to it.

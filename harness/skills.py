@@ -31,7 +31,7 @@ def parse_skill_references(agents_content: str) -> List[SkillReference]:
         if not name or parsed.scheme or parsed.netloc or not target:
             continue
         path = target.split("#", 1)[0].split("?", 1)[0]
-        if not path.lower().endswith(".md"):
+        if Path(path).name != "SKILL.md":
             continue
         normalized = Path(path).as_posix()
         key = normalized.casefold()
@@ -106,6 +106,8 @@ def load_skill(skill: str, workspace: Path = None) -> Dict[str, str]:
         path = _resolve_skill_path(root, reference.path)
     except ValueError as exc:
         return {"error": str(exc)}
+    if path.name != "SKILL.md" or path.parent == root:
+        return {"error": f"Skill path must point to a skill directory's SKILL.md: {reference.path}"}
     if not path.is_file():
         return {"error": f"Skill file not found: {reference.path}"}
     try:
