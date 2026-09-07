@@ -256,7 +256,11 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
             _print_cost(conversation, last=True)
             continue
         if command in {"/compact show", "/compact-show"}:
-            show_handover()
+            if compact(force=True):
+                print("\033[90m▸ context compacted\033[0m")
+                show_handover()
+            else:
+                print("\033[90m▸ no complete conversation turn available to compact\033[0m")
             continue
         if command == "/compact":
             if compact(force=True):
