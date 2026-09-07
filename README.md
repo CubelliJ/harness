@@ -42,6 +42,8 @@ Useful commands:
 - `/cost` — show current conversation cost and token usage
 - `/cost last` — show the most recent LLM call cost and token usage
 - `/compact` — manually compact older conversation turns
+- `/compact show` — compact, then display the generated conversation handover
+  (`/compact-show` is an alias)
 - `/clear` — start a fresh conversation while preserving the workspace
 - `/auto-accept` — approve future file edits automatically
 - `/voice` — use voice input on macOS
@@ -51,7 +53,11 @@ Press Escape at any time while the agent is thinking, running a tool, or waiting
 for edit/command approval to interrupt the active turn and return to the prompt
 for feedback. Shell commands always require confirmation. Readable session transcripts are
 saved in `~/harness_logs/`, and the active conversation state is persisted in
-`~/harness_logs/`. A session is added to the recent-conversations list after its
+`~/harness_logs/`. Harness automatically compacts older complete turns when the
+conversation exceeds 25% of the model context window or 200,000 tokens,
+whichever threshold is reached first. The LLM generates a conversation handover
+for the retained context; Harness shows `▸ compacting conversation…` while this
+runs. A session is added to the recent-conversations list after its
 first human request; empty launches are not listed. Each launch starts a new
 conversation by default; use `harness --reload` to choose from the five most
 recent conversations for the current workspace. After the first completed turn,
