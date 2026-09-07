@@ -19,7 +19,7 @@ from harness.terminal import MarkdownStreamRenderer, render_markdown
 Conversation = list[Dict[str, Any]]
 InterruptibleCall = Callable[..., Any]
 Persist = Callable[[], None]
-Compact = Callable[[], bool]
+Compact = Callable[..., bool]
 ConfirmCommand = Callable[[str], tuple[bool, str]]
 ConfirmEdit = Callable[[Dict[str, Any]], tuple[bool, str]]
 UpdateTokens = Callable[[Optional[int]], None]
@@ -124,6 +124,7 @@ def run_turn(
         persist()
 
         preflight_error: Optional[str] = None
+        compaction_requested = False
         for tool_call in tool_calls:
             try:
                 parse_tool_call(tool_call)
@@ -157,6 +158,9 @@ def run_turn(
                         result = {"action": "command_rejected"}
                         if feedback:
                             result["feedback"] = feedback
+                elif name == "compact_conversation":
+                    result = {"action": "compaction_requested"}
+                    compaction_requested = True
                 elif name == "edit_file":
                     preview_args = dict(args, apply=False)
                     result = interruptible_call(execute_tool, name, preview_args)
@@ -192,3 +196,7 @@ def run_turn(
                 ))
                 conversation[-1]["image_context"] = True
         persist()
+        if compaction_requested:
+            compact(force=True)
+            persist()
+            continue

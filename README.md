@@ -55,9 +55,12 @@ for feedback. Shell commands always require confirmation. Readable session trans
 saved in `~/harness_logs/`, and the active conversation state is persisted in
 `~/harness_logs/`. Harness automatically compacts older complete turns when the
 conversation exceeds 25% of the model context window or 200,000 tokens,
-whichever threshold is reached first. The LLM generates a conversation handover
-for the retained context; Harness shows `▸ compacting conversation…` while this
-runs. A session is added to the recent-conversations list after its
+whichever threshold is reached first. After finishing edits and validation, the
+LLM may also request the `compact_conversation` tool; Harness records that tool
+call, compacts only after its result is complete, and resumes with the handover.
+The LLM generates a conversation handover for the retained context; Harness
+shows `▸ compacting conversation…` while this runs. A session is added to the
+recent-conversations list after its
 first human request; empty launches are not listed. Each launch starts a new
 conversation by default; use `harness --reload` to choose from the five most
 recent conversations for the current workspace. After the first completed turn,
