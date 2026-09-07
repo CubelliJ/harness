@@ -240,6 +240,7 @@ def compact_conversation(
     token_counter: Callable[[Dict[str, Any]], int] = estimate_tokens,
     force: bool = False,
     summarize: Optional[Callable[[Sequence[Dict[str, Any]]], Any]] = None,
+    on_start: Optional[Callable[[], None]] = None,
 ) -> bool:
     """Prune old turns until ``conversation`` fits within ``budget``.
 
@@ -279,6 +280,8 @@ def compact_conversation(
     removed = rest[:start]
     if not removed:
         return False
+    if on_start is not None:
+        on_start()
 
     summary_text = "[Earlier conversation compacted: %d messages omitted. Continue from the retained history.]" % len(removed)
     summary_usage: Optional[Dict[str, Any]] = None

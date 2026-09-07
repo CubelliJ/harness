@@ -135,12 +135,26 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
             return None
         return min(CONTEXT_COMPACTION_CAP, int(context_limit * CONTEXT_COMPACTION_RATIO))
 
+    def show_handover() -> None:
+        handovers = [
+            str(message.get("content") or "")
+            for message in conversation
+            if message.get("role") == "system"
+            and str(message.get("content") or "").startswith("[Conversation handover]")
+        ]
+        if not handovers:
+            print("\033[90m▸ no conversation handover available\033[0m")
+            return
+        print("\033[90m▸ latest conversation handover:\033[0m")
+        print(handovers[-1].split("\n", 1)[-1])
+
     def compact(force: bool = False) -> bool:
         changed = compact_conversation(
             conversation,
             compaction_budget(),
             force=force,
             summarize=summarize_conversation,
+            on_start=lambda: print("\033[90m▸ compacting conversation…\033[0m", flush=True),
         )
         if changed:
             persist()
@@ -241,6 +255,9 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
         if command == "/cost last":
             _print_cost(conversation, last=True)
             continue
+        if command in {"/compact show", "/compact-show"}:
+            show_handover()
+            continue
         if command == "/compact":
             if compact(force=True):
                 print("\033[90m▸ context compacted\033[0m")
@@ -273,7 +290,7 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
             print("\033[90m▸ voice mode is off\033[0m")
             continue
         if command in {"/help", "?"}:
-            print("Commands: /model, /model <number|id|search>, /context, /cost, /cost last, /compact, /clear, /auto-accept, /auto-accept off, /voice, /quit")
+            print("Commands: /model, /model <number|id|search>, /context, /cost, /cost last, /compact, /compact show, /clear, /auto-accept, /auto-accept off, /voice, /quit")
             continue
         if user_input.strip():
             try:
