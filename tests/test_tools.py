@@ -44,7 +44,7 @@ class ToolsTestCase(unittest.TestCase):
 
     def test_openai_tool_schemas_match_executable_tools(self):
         schema_names = {item["function"]["name"] for item in OPENAI_TOOLS}
-        executable = set(TOOL_REGISTRY) | {"load_skill"}
+        executable = set(TOOL_REGISTRY) | {"load_skill", "compact_conversation"}
         self.assertEqual(schema_names, executable)
 
     def test_system_prompt_references_core_workflow_tools(self):

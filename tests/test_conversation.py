@@ -89,6 +89,46 @@ class ConversationTestCase(unittest.TestCase):
         self.assertEqual(roles, ["system", "system", "user"])
         self.assertEqual(conversation[-1]["content"], "current request")
 
+    def test_compaction_uses_handover_summary_and_usage(self):
+        conversation = [
+            system_message("rules"),
+            user_message("old request"),
+            assistant_message("old answer"),
+            user_message("current request"),
+            assistant_message("current answer"),
+        ]
+        calls = []
+
+        def summarize(history):
+            calls.append(history)
+            return "Goal: continue the implementation.\nNext: run tests.", {"prompt_tokens": 9}
+
+        changed = compact_conversation(
+            conversation, 3, token_counter=lambda _: 1, summarize=summarize,
+        )
+        self.assertTrue(changed)
+        self.assertEqual(len(calls), 1)
+        self.assertIn("Goal: continue", conversation[1]["content"])
+        self.assertEqual(conversation[1]["compaction_usage"]["prompt_tokens"], 9)
+        self.assertEqual(conversation[-2:], [user_message("current request"), assistant_message("current answer")])
+
+    def test_compaction_calls_on_start_after_finding_removable_history(self):
+        conversation = [
+            system_message("rules"),
+            user_message("old request"),
+            assistant_message("old answer"),
+            user_message("current request"),
+        ]
+        started = []
+        changed = compact_conversation(
+            conversation,
+            3,
+            token_counter=lambda _: 1,
+            on_start=lambda: started.append(True),
+        )
+        self.assertTrue(changed)
+        self.assertEqual(started, [True])
+
     def test_manual_compaction_works_without_budget(self):
         conversation = [
             system_message("rules"),

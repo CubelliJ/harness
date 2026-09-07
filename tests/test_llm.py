@@ -10,6 +10,7 @@ from harness.llm import (
     get_available_models,
     model_context_length,
     parse_tool_call,
+    summarize_conversation,
 )
 
 
@@ -112,6 +113,27 @@ class LlmTestCase(unittest.TestCase):
         self.assertEqual(payload["tools"], [])
         self.assertEqual(payload["tool_choice"], "none")
         self.assertLessEqual(len(payload["messages"][1]["content"]), 1200)
+
+    @patch("harness.llm.urllib.request.urlopen")
+    @patch("harness.llm._headers", return_value={"Authorization": "Bearer test"})
+    def test_summarize_conversation_reuses_history_as_prefix(self, _headers, urlopen):
+        response = unittest.mock.Mock()
+        response.__enter__ = lambda self: self
+        response.__exit__ = lambda *args: None
+        response.read.return_value = b'{"choices":[{"message":{"content":"handover"}}],"usage":{"prompt_tokens":100,"prompt_tokens_details":{"cached_tokens":90}}}'
+        urlopen.return_value = response
+        history = [
+            {"role": "system", "content": "rules"},
+            {"role": "user", "content": "request"},
+        ]
+        summary, usage = summarize_conversation(history)
+        self.assertEqual(summary, "handover")
+        self.assertEqual(usage["prompt_tokens_details"]["cached_tokens"], 90)
+        payload = __import__("json").loads(urlopen.call_args.args[0].data)
+        self.assertEqual(payload["messages"][:2], history)
+        self.assertEqual(payload["tools"], [])
+        self.assertEqual(payload["tool_choice"], "none")
+        self.assertIn("handover", payload["messages"][-1]["content"])
 
     def test_model_context_length(self):
         body = {"data": [{"id": "model-a", "context_length": 128000}]}

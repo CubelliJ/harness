@@ -39,6 +39,18 @@ OPENAI_TOOLS: List[Dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "compact_conversation",
+            "description": (
+                "Compact older conversation turns after finishing the current work. "
+                "Use this after edits and validation when the conversation has become long; "
+                "do not use it while another tool exchange is unfinished."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "load_skill",
             "description": "Load a relevant skill explicitly linked from AGENTS.md.",
             "parameters": {
