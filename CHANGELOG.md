@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.30.0](https://github.com/CubelliJ/harness/compare/v0.29.0...v0.30.0) (2026-09-07)
+
+
+### Features
+
+* add LLM-driven conversation compaction ([a38abad](https://github.com/CubelliJ/harness/commit/a38abada0660e360d83f124bdda0e273586432db))
+* display conversation compaction status ([9e1c893](https://github.com/CubelliJ/harness/commit/9e1c8930eb75b45030fd1aeaf42f920f8a22ea4a))
+* let the model request conversation compaction ([390c2af](https://github.com/CubelliJ/harness/commit/390c2af5b665737bcb1ccd33d7b8219cb1f348ea))
+* summarize conversations during compaction ([3c27dcf](https://github.com/CubelliJ/harness/commit/3c27dcff294a891e70a3b1b907c86d8ac0c71b06))
+* tune automatic compaction threshold ([4ac5f68](https://github.com/CubelliJ/harness/commit/4ac5f68faa1bfce3dd6da41ac815f7842d1e71b8))
+
+
+### Bug Fixes
+
+* compact before showing handover ([82bf5ce](https://github.com/CubelliJ/harness/commit/82bf5cedc7ec645059235b61f24295395d51c5de))
+
 ## [0.29.0](https://github.com/CubelliJ/harness/compare/v0.28.1...v0.29.0) (2026-08-30)
 
 
