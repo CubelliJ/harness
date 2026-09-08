@@ -1,3 +1,8 @@
+---
+name: check-work-status
+description: Inspect and summarize the current Git branch, commits, working-tree changes, and diffs. Use when asked what changed, what is in progress, or whether repository work is committed.
+---
+
 # Check work status
 
 Use this workflow when asked what has been worked on, what is currently in

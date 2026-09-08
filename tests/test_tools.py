@@ -13,7 +13,13 @@ from harness.registry import (
     format_tool_result_content,
     get_full_system_prompt,
 )
-from harness.skills import load_skill, parse_skill_references, skill_catalog
+from harness.skills import (
+    _BUILTIN_SKILLS,
+    load_skill,
+    parse_skill_references,
+    skill_catalog,
+    skill_sources,
+)
 
 
 class ToolsTestCase(unittest.TestCase):
@@ -40,7 +46,14 @@ class ToolsTestCase(unittest.TestCase):
         self.assertIn("Use the develop release flow.", prompt)
 
     def test_system_prompt_ignores_missing_agents_file(self):
-        self.assertEqual(get_full_system_prompt(self.workspace), get_full_system_prompt())
+        prompt = get_full_system_prompt(self.workspace)
+        self.assertNotIn("Workspace instructions", prompt)
+        self.assertIn("Skills are available through the load_skill tool.", prompt)
+
+    def test_system_prompt_lists_installed_skills_in_empty_workspace(self):
+        prompt = get_full_system_prompt(self.workspace)
+        self.assertIn("copy-to-clipboard [installation]", prompt)
+        self.assertNotIn("name: copy-to-clipboard", prompt)
 
     def test_openai_tool_schemas_match_executable_tools(self):
         schema_names = {item["function"]["name"] for item in OPENAI_TOOLS}
@@ -53,36 +66,82 @@ class ToolsTestCase(unittest.TestCase):
 
     def test_skill_references_are_parsed_without_loading_contents(self):
         references = parse_skill_references(
-            "[Testing](.harness/skills/testing.md) [External](https://example.com/a.md) "
-            "[Testing again](.harness/skills/testing.md#section)"
+            "[Testing](.harness/skills/testing/SKILL.md) "
+            "[Legacy](.harness/skills/testing.md) "
+            "[External](https://example.com/a.md) "
+            "[Testing again](.harness/skills/testing/SKILL.md#section)"
         )
         self.assertEqual([(item.name, item.path) for item in references], [
-            ("Testing", ".harness/skills/testing.md"),
+            ("Testing", ".harness/skills/testing/SKILL.md"),
         ])
 
     def test_system_prompt_contains_skill_catalog_not_skill_contents(self):
         (self.workspace / "AGENTS.md").write_text(
-            "Use skills: [Testing](skills/testing.md)", encoding="utf-8"
+            "Use skills: [Testing](skills/testing/SKILL.md)", encoding="utf-8"
         )
-        skills = self.workspace / "skills"
-        skills.mkdir()
-        (skills / "testing.md").write_text("secret testing instructions", encoding="utf-8")
+        skills = self.workspace / "skills" / "testing"
+        skills.mkdir(parents=True)
+        (skills / "SKILL.md").write_text("secret testing instructions", encoding="utf-8")
         prompt = get_full_system_prompt(self.workspace)
-        self.assertIn("Testing: skills/testing.md", prompt)
+        self.assertIn("Testing [workspace]", prompt)
         self.assertNotIn("secret testing instructions", prompt)
 
     def test_load_skill_requires_active_reference_and_loads_by_name(self):
         (self.workspace / "AGENTS.md").write_text(
-            "[Testing](skills/testing.md)", encoding="utf-8"
+            "[Testing](skills/testing/SKILL.md)", encoding="utf-8"
         )
-        skills = self.workspace / "skills"
-        skills.mkdir()
-        (skills / "testing.md").write_text("run the tests", encoding="utf-8")
+        skills = self.workspace / "skills" / "testing"
+        skills.mkdir(parents=True)
+        (skills / "SKILL.md").write_text("run the tests", encoding="utf-8")
         result = load_skill("Testing", self.workspace)
         self.assertEqual(result["content"], "run the tests")
         self.assertIn("run the tests", format_tool_result_content("load_skill", result))
         self.assertIn("Missing required", execute_tool("load_skill", {}).get("error", ""))
-        self.assertIn("not declared", load_skill("Other", self.workspace)["error"])
+        self.assertIn("not available", load_skill("Other", self.workspace)["error"])
+
+    def test_workspace_skills_are_discovered_without_agents_link(self):
+        skill_dir = self.workspace / ".harness" / "skills" / "local-only"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("workspace skill", encoding="utf-8")
+        sources = skill_sources(self.workspace)
+        self.assertEqual(sources[0].name, "local-only")
+        self.assertEqual(sources[0].origin, "workspace")
+        result = load_skill("local-only", self.workspace)
+        self.assertEqual(result["content"], "workspace skill")
+
+    def test_skill_sources_use_workspace_user_installation_precedence(self):
+        user_root = self.workspace / "user-skills"
+        user_skill = user_root / "shared"
+        user_skill.mkdir(parents=True)
+        (user_skill / "SKILL.md").write_text("user", encoding="utf-8")
+        workspace_skill = self.workspace / ".harness" / "skills" / "shared"
+        workspace_skill.mkdir(parents=True)
+        (workspace_skill / "SKILL.md").write_text("workspace", encoding="utf-8")
+        (self.workspace / "AGENTS.md").write_text(
+            "[Shared](.harness/skills/shared/SKILL.md)", encoding="utf-8"
+        )
+        with patch("harness.skills._user_skills_root", return_value=user_root):
+            sources = skill_sources(self.workspace)
+            self.assertEqual(sources[0].origin, "workspace")
+            self.assertEqual(load_skill("shared", self.workspace)["content"], "workspace")
+
+    def test_bundled_skills_are_discoverable_without_agents_link(self):
+        bundled = _BUILTIN_SKILLS / "copy-to-clipboard" / "SKILL.md"
+        self.assertTrue(bundled.is_file())
+        result = load_skill("copy-to-clipboard", self.workspace)
+        self.assertEqual(result["origin"], "installation")
+        self.assertIn("name: copy-to-clipboard", result["content"])
+
+    def test_loaded_skill_exposes_bundled_resource_paths(self):
+        result = load_skill("copy-to-clipboard", self.workspace)
+        skill_file = next(
+            item for item in result["resources"]
+            if item["relative_path"] == "SKILL.md"
+        )
+        self.assertTrue(Path(skill_file["path"]).is_file())
+        formatted = format_tool_result_content("load_skill", result)
+        self.assertIn("SKILL.md", formatted)
+        self.assertIn(skill_file["path"], formatted)
 
     def test_load_skill_rejects_external_symlink(self):
         outside = Path(tempfile.mkdtemp())
@@ -90,9 +149,11 @@ class ToolsTestCase(unittest.TestCase):
             (outside / "secret.md").write_text("secret", encoding="utf-8")
             skills = self.workspace / "skills"
             skills.mkdir()
-            (skills / "secret.md").symlink_to(outside / "secret.md")
+            skill_dir = skills / "secret"
+            skill_dir.mkdir()
+            (skill_dir / "SKILL.md").symlink_to(outside / "secret.md")
             (self.workspace / "AGENTS.md").write_text(
-                "[Secret](skills/secret.md)", encoding="utf-8"
+                "[Secret](skills/secret/SKILL.md)", encoding="utf-8"
             )
             result = load_skill("Secret", self.workspace)
             self.assertIn("escapes", result["error"])

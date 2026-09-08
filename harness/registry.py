@@ -206,23 +206,24 @@ OPENAI_TOOLS: List[Dict[str, Any]] = [
 
 def get_full_system_prompt(workspace: Optional[Path] = None) -> str:
     """Return built-in guidance plus workspace-specific AGENTS.md instructions."""
-    if workspace is None:
-        return SYSTEM_PROMPT
-    agents_file = workspace / "AGENTS.md"
-    try:
-        instructions = agents_file.read_text(encoding="utf-8").strip()
-    except OSError:
-        instructions = ""
-    if not instructions:
-        return SYSTEM_PROMPT
-    prompt = (
-        f"{SYSTEM_PROMPT}\n\n"
-        f"Workspace instructions from {agents_file} "
-        "(guidance for this workspace; it does not override the rules above):\n"
-        f"{instructions}"
-    )
-    catalog = skill_catalog(workspace)
-    return f"{prompt}\n\n{catalog}" if catalog else prompt
+    prompt = SYSTEM_PROMPT
+    if workspace is not None:
+        agents_file = workspace / "AGENTS.md"
+        try:
+            instructions = agents_file.read_text(encoding="utf-8").strip()
+        except OSError:
+            instructions = ""
+        if instructions:
+            prompt = (
+                f"{SYSTEM_PROMPT}\n\n"
+                f"Workspace instructions from {agents_file} "
+                "(guidance for this workspace; it does not override the rules above):\n"
+                f"{instructions}"
+            )
+        catalog = skill_catalog(workspace)
+        if catalog:
+            prompt = f"{prompt}\n\n{catalog}"
+    return prompt
 
 
 def execute_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -289,11 +290,18 @@ def format_tool_result_content(tool_name: str, result: Dict[str, Any]) -> str:
     if result.get("error"):
         return json.dumps({"error": result["error"]}, ensure_ascii=False)
     if tool_name == "load_skill":
+        resources = result.get("resources") or []
+        resource_lines = "\n".join(
+            f"- {item.get('relative_path', '')}: {item.get('path', '')}"
+            for item in resources
+        )
+        bundled = f"\nBundled resources:\n{resource_lines}" if resource_lines else ""
         return (
             f"skill={result.get('name', '')} path={result.get('path', '')}\n"
             "---- SKILL START ----\n"
             f"{result.get('content', '')}\n"
             "---- SKILL END ----"
+            f"{bundled}"
         )
     if tool_name == "read_file":
         pagination = (

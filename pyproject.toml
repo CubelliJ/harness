@@ -19,4 +19,4 @@ harness = "harness.main:main"
 include = ["harness*"]
 
 [tool.setuptools.package-data]
-harness = ["native/stt/*"]
+harness = ["native/stt/*", "skills/*", "skills/**/*"]

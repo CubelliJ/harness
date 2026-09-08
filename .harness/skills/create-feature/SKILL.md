@@ -1,3 +1,8 @@
+---
+name: create-feature
+description: Implement a repository feature using the project's branch, testing, commit, and pull-request workflow. Use when asked to create or implement new functionality.
+---
+
 # Create a feature
 
 Use this workflow when the user asks to create or implement a new feature.

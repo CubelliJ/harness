@@ -7,10 +7,9 @@ when the task concerns harness itself; include tests/ when behavior changes.
 
 ## Skills
 
-- Create a new feature: [create_feature](.harness/skills/create_feature.md)
-- Create a new skill: [create_skill](.harness/skills/create_skill.md)
-- Check what has changed: [check_work_status](.harness/skills/check_work_status.md)
-- Open a pull request: [pull_request](.harness/skills/pull-request.md)
+- Create a new feature: [create-feature](.harness/skills/create-feature/SKILL.md)
+- Check what has changed: [check-work-status](.harness/skills/check-work-status/SKILL.md)
+- Open a pull request: [pull-request](.harness/skills/pull-request/SKILL.md)
 
 ## Validation
 
