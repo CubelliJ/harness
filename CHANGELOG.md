@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.32.0](https://github.com/CubelliJ/harness/compare/v0.31.1...v0.32.0) (2026-09-08)
+
+
+### Features
+
+* prefer proactive conversation compaction ([de29327](https://github.com/CubelliJ/harness/commit/de293276f5bde2583f0e18d72a6888464b7afc04))
+* prefer proactive conversation compaction ([5a9ca0f](https://github.com/CubelliJ/harness/commit/5a9ca0f35e3b0f3e0b987dca56e179283d3cdab9))
+
 ## [0.31.1](https://github.com/CubelliJ/harness/compare/v0.31.0...v0.31.1) (2026-09-08)
 
 
