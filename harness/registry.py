@@ -17,6 +17,9 @@ Workflow:
   previewed for approval, so do not batch unrelated edits into one call.
 - After meaningful changes, run the workspace's focused tests or validation with
   run_command before reporting completion.
+- You may use compact_conversation proactively when you judge your current work
+  complete and the remaining context is no longer needed, so the conversation can
+  continue with less-specific context.
 - Treat destructive or irreversible operations (deleting files, discarding changes,
   force-pushes) as last resorts: run them only when the user explicitly requested
   that exact action.

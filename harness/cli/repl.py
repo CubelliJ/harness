@@ -149,6 +149,7 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
         print(handovers[-1].split("\n", 1)[-1])
 
     def compact(force: bool = False) -> bool:
+        nonlocal context_tokens
         changed = compact_conversation(
             conversation,
             compaction_budget(),
@@ -157,6 +158,7 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
             on_start=lambda: print("\033[90m▸ compacting conversation…\033[0m", flush=True),
         )
         if changed:
+            context_tokens = None
             persist()
         return changed
 
