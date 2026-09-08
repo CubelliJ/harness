@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.31.1](https://github.com/CubelliJ/harness/compare/v0.31.0...v0.31.1) (2026-09-08)
+
+
+### Bug Fixes
+
+* correct manual conversation compaction ([623a383](https://github.com/CubelliJ/harness/commit/623a383dd23da128032d39d8227abdac625d3ee3))
+* correct manual conversation compaction ([e093c34](https://github.com/CubelliJ/harness/commit/e093c345dc4cbdba6d91a5b1a2d1ffe84d8ed303))
+* guide proactive conversation compaction ([e54c7a0](https://github.com/CubelliJ/harness/commit/e54c7a01dd11928e843a2f06244aff301b38baf6))
+
 ## [0.31.0](https://github.com/CubelliJ/harness/compare/v0.30.0...v0.31.0) (2026-09-08)
 
 
