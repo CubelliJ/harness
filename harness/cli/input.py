@@ -36,6 +36,14 @@ _KITTY_KEYBOARD_DISABLE = "\u001b[<u"
 # With the Kitty keyboard protocol enabled, Ctrl+C is reported as this CSI
 # sequence rather than the traditional ETX byte (\\x03).
 _CTRL_C_SEQUENCES = ("\u001b[99;5u",)
+# Shift+Tab is reported by terminals using the kitty keyboard protocol as
+# CSI 9;2u. The xterm modifyOtherKeys form is accepted as well.
+_SHIFT_TAB_SEQUENCES = (
+    "\u001b[9;2u",
+    "\u001b[27;2;9~",
+    "\u001b[9;2~",
+)
+INPUT_MODE_SWITCH = object()
 
 
 @contextmanager
@@ -116,6 +124,10 @@ def _is_shift_enter(sequence: str) -> bool:
     return sequence in _SHIFT_ENTER_SEQUENCES
 
 
+def _is_shift_tab(sequence: str) -> bool:
+    return sequence in _SHIFT_TAB_SEQUENCES
+
+
 
 def _echo(ch: str) -> None:
     if ch == "\n":
@@ -158,6 +170,12 @@ def _read_input(prompt: str) -> str:
             # it before generic escape-sequence filtering, which would drop it.
             if not in_paste and pending in _CTRL_C_SEQUENCES:
                 raise KeyboardInterrupt
+
+            # Shift+Tab toggles the session mode. Return a sentinel instead
+            # of allowing the escape sequence into the request text.
+            if not in_paste and _is_shift_tab(pending):
+                pending = ""
+                return INPUT_MODE_SWITCH
 
             # Shift+Enter is reported as an escape sequence by terminals that
             # support modified keys.  Treat it as an embedded newline rather

@@ -93,6 +93,25 @@ def confirm_command(
     return False, feedback or ""
 
 
+def confirm_mode(
+    mode: str,
+    *,
+    pause_voice_session: PauseVoiceSession,
+    drain_pending_input: DrainPendingInput,
+) -> bool:
+    """Confirm a session-only mode transition, defaulting to yes."""
+    pause_voice_session()
+    drain_pending_input()
+    label = "Plan Mode" if mode == "plan" else "Agent Mode"
+    print(f"\n\033[33mSwitching to {label}\033[0m")
+    try:
+        answer = read_confirmation(f"Switch to {label}? [Y/n] ")
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+    return answer is not None and answer.lower() in {"", "y", "yes"}
+
+
 def confirm_edit(
     result: Dict[str, Any],
     *,

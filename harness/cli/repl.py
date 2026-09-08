@@ -32,6 +32,8 @@ from harness.conversation import (
     user_message,
 )
 from harness.registry import get_full_system_prompt
+from harness.skills import load_skill
+from harness.cli.mode import ModeState, SessionMode, mode_context
 from harness.llm import (
     get_available_models,
     get_model_context_length,
@@ -46,6 +48,7 @@ from harness.cli.input import (
     _drain_pending_input,
     _interruptible_call,
     _read_input,
+    INPUT_MODE_SWITCH,
 )
 from harness.cli.confirmations import confirm_command, confirm_edit
 from harness.cli.presentation import (
@@ -68,6 +71,7 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
     context_tokens: Optional[int] = None
     context_limit = get_model_context_length()
     workspace = config.workspace_root()
+    mode_state = ModeState()
     history_path = history_file_path()
     state_path = session_state_path(history_path)
     catalog_path = session_catalog_path(state_path)
@@ -177,6 +181,29 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
         history_path = state_path.with_suffix(".txt")
         persist(register=False)
 
+    def apply_mode(requested: str) -> None:
+        mode_state.current = SessionMode(requested)
+        label = "Plan Mode" if mode_state.current is SessionMode.PLAN else "Agent Mode"
+        print(f"\033[90m▸ switched to {label}\033[0m")
+        conversation.append(system_message(mode_context(mode_state.current)))
+        if mode_state.current is SessionMode.PLAN:
+            skill = load_skill("grilling", workspace)
+            if not skill.get("error"):
+                conversation.append(system_message(
+                    f"[Loaded skill: grilling]\n{skill['content']}"
+                ))
+            else:
+                print(f"\033[33m▸ could not load grilling: {skill['error']}\033[0m")
+        persist()
+
+    def confirm_mode_switch(requested: str) -> bool:
+        from harness.cli.confirmations import confirm_mode
+        return confirm_mode(
+            requested,
+            pause_voice_session=pause_voice_session,
+            drain_pending_input=_drain_pending_input,
+        )
+
     def process(user_input: str) -> None:
         nonlocal session_auto_approve, context_tokens
         conversation.append(user_message(user_input))
@@ -217,6 +244,9 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
                 pause_voice_session=pause_voice_session,
                 drain_pending_input=_drain_pending_input,
             ),
+            confirm_mode=confirm_mode_switch,
+            mode_changed=apply_mode,
+            mode_state=mode_state,
             interruptible_call=_interruptible_call,
             update_tokens=_update_context_tokens,
         )
@@ -224,6 +254,16 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
     def _update_context_tokens(prompt_tokens: Optional[int]) -> None:
         nonlocal context_tokens
         context_tokens = prompt_tokens
+
+    def toggle_mode() -> None:
+        requested = (
+            SessionMode.PLAN if mode_state.current is SessionMode.AGENT
+            else SessionMode.AGENT
+        )
+        if not confirm_mode_switch(requested.value):
+            return
+        apply_mode(requested.value)
+        _process_turn(mode_context(requested))
 
     if initial_request:
         try:
@@ -237,6 +277,9 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
             user_input = _read_input(_prompt())
         except (KeyboardInterrupt, EOFError):
             return
+        if user_input is INPUT_MODE_SWITCH:
+            toggle_mode()
+            continue
         command = user_input.strip().lower()
         if command in {"/quit", "/exit"}:
             return
@@ -258,6 +301,9 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
             _print_cost(conversation, last=True)
             continue
         if command in {"/compact show", "/compact-show"}:
+            if mode_state.current is SessionMode.PLAN:
+                print("\033[90m▸ manual compaction is unavailable in Plan Mode\033[0m")
+                continue
             if compact(force=True):
                 print("\033[90m▸ context compacted\033[0m")
                 show_handover()
@@ -265,6 +311,9 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
                 print("\033[90m▸ no complete conversation turn available to compact\033[0m")
             continue
         if command == "/compact":
+            if mode_state.current is SessionMode.PLAN:
+                print("\033[90m▸ manual compaction is unavailable in Plan Mode\033[0m")
+                continue
             if compact(force=True):
                 print("\033[90m▸ context compacted\033[0m")
             else:
