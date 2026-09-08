@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.31.0](https://github.com/CubelliJ/harness/compare/v0.30.0...v0.31.0) (2026-09-08)
+
+
+### Features
+
+* migrate skills to Agent Skills format ([a41ac73](https://github.com/CubelliJ/harness/commit/a41ac7341bc8d02799d9423ce0854d7107049fa1))
+* migrate skills to Agent Skills format ([01c3557](https://github.com/CubelliJ/harness/commit/01c355766ab4cec6b3031a075cc6624a08519f43))
+* migrate skills to Agent Skills format ([236f8ea](https://github.com/CubelliJ/harness/commit/236f8ea7573da41174ff284746afd2250c6312b0))
+
 ## [0.30.0](https://github.com/CubelliJ/harness/compare/v0.29.0...v0.30.0) (2026-09-07)
 
 
