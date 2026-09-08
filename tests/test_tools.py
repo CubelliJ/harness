@@ -64,12 +64,14 @@ class ToolsTestCase(unittest.TestCase):
         for name in ("search_files", "read_file", "edit_file", "run_command", "load_skill"):
             self.assertIn(name, SYSTEM_PROMPT)
 
-    def test_system_prompt_allows_proactive_compaction_when_work_is_done(self):
-        self.assertIn("use compact_conversation proactively", SYSTEM_PROMPT)
-        self.assertIn("current work", SYSTEM_PROMPT)
-        self.assertIn("remaining context is no longer needed", SYSTEM_PROMPT)
-        self.assertIn("less-specific", SYSTEM_PROMPT)
-        self.assertIn("context", SYSTEM_PROMPT)
+    def test_system_prompt_prefers_proactive_compaction_with_safeguards(self):
+        self.assertIn("Prefer compact_conversation", SYSTEM_PROMPT)
+        self.assertIn("after completing a task", SYSTEM_PROMPT)
+        self.assertIn("before starting an", SYSTEM_PROMPT)
+        self.assertIn("unrelated task", SYSTEM_PROMPT)
+        self.assertIn("concise handoff", SYSTEM_PROMPT)
+        self.assertIn("Do not compact during an unfinished tool exchange", SYSTEM_PROMPT)
+        self.assertIn("status, validation, and any follow-up", SYSTEM_PROMPT)
 
     def test_skill_references_are_parsed_without_loading_contents(self):
         references = parse_skill_references(

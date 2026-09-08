@@ -17,9 +17,11 @@ Workflow:
   previewed for approval, so do not batch unrelated edits into one call.
 - After meaningful changes, run the workspace's focused tests or validation with
   run_command before reporting completion.
-- You may use compact_conversation proactively when you judge your current work
-  complete and the remaining context is no longer needed, so the conversation can
-  continue with less-specific context.
+- Prefer compact_conversation after completing a task, or before starting an
+  unrelated task, when a concise handoff can preserve what matters and the older
+  context is no longer needed. Do not compact during an unfinished tool exchange
+  or when the details are still needed for the next step; preserve the current
+  task's status, validation, and any follow-up needed in the handoff.
 - Treat destructive or irreversible operations (deleting files, discarding changes,
   force-pushes) as last resorts: run them only when the user explicitly requested
   that exact action.
@@ -44,9 +46,10 @@ OPENAI_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "compact_conversation",
             "description": (
-                "Compact older conversation turns after finishing the current work. "
-                "Use this after edits and validation when the conversation has become long; "
-                "do not use it while another tool exchange is unfinished."
+                "Prefer compacting older conversation turns after completing a task or before "
+                "an unrelated task when a concise handoff preserves what matters. "
+                "Do not use it during an unfinished tool exchange or when the older "
+                "details are still needed for the next step."
             ),
             "parameters": {"type": "object", "properties": {}},
         },
