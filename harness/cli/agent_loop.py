@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, Optional
 from harness import config
 from harness.conversation import (
     ASSISTANT_PREFIX,
+    PLAN_ASSISTANT_PREFIX,
     assistant_message,
     tool_message,
     user_message,
@@ -14,14 +15,17 @@ from harness.conversation import (
 from harness.llm import execute_llm_call, parse_tool_call
 from harness.registry import execute_tool, format_tool_result_content
 from harness.terminal import MarkdownStreamRenderer, render_markdown
+from harness.cli.mode import ModeState, SessionMode
 
 
 Conversation = list[Dict[str, Any]]
 InterruptibleCall = Callable[..., Any]
 Persist = Callable[[], None]
-Compact = Callable[[], bool]
+Compact = Callable[..., bool]
 ConfirmCommand = Callable[[str], tuple[bool, str]]
 ConfirmEdit = Callable[[Dict[str, Any]], tuple[bool, str]]
+ConfirmMode = Callable[[str], bool]
+ModeChanged = Callable[[SessionMode], None]
 UpdateTokens = Callable[[Optional[int]], None]
 GenerateTitle = Callable[[], None]
 
@@ -76,8 +80,14 @@ def run_turn(
     confirm_edit: ConfirmEdit,
     interruptible_call: InterruptibleCall,
     update_tokens: UpdateTokens,
+    confirm_mode: Optional[ConfirmMode] = None,
+    mode_state: Optional[ModeState] = None,
+    mode_changed: Optional[ModeChanged] = None,
 ) -> None:
     """Run provider responses and tool calls until the assistant answers."""
+    confirm_mode = confirm_mode or (lambda requested: False)
+    mode_state = mode_state or ModeState()
+    mode_changed = mode_changed or (lambda mode: None)
     while True:
         compact()
         streamed_text = False
@@ -89,7 +99,10 @@ def run_turn(
             if not rendered:
                 return
             if not streamed_text:
-                sys.stdout.write(ASSISTANT_PREFIX)
+                sys.stdout.write(
+                    PLAN_ASSISTANT_PREFIX if mode_state.current.value == "plan"
+                    else ASSISTANT_PREFIX
+                )
                 streamed_text = True
             sys.stdout.write(rendered)
             sys.stdout.flush()
@@ -100,7 +113,10 @@ def run_turn(
         tail = markdown_renderer.finish()
         if tail:
             if not streamed_text:
-                sys.stdout.write(ASSISTANT_PREFIX)
+                sys.stdout.write(
+                    PLAN_ASSISTANT_PREFIX if mode_state.current is SessionMode.PLAN
+                    else ASSISTANT_PREFIX
+                )
                 streamed_text = True
             sys.stdout.write(tail)
         if streamed_text:
@@ -119,11 +135,14 @@ def run_turn(
             return
 
         if content and not streamed_text:
-            print(f"{ASSISTANT_PREFIX}{render_markdown(content)}")
+            prefix = PLAN_ASSISTANT_PREFIX if mode_state.current.value == "plan" else ASSISTANT_PREFIX
+            print(f"{prefix}{render_markdown(content)}")
         conversation.append(assistant_message(content or None, tool_calls=tool_calls, usage=usage))
         persist()
 
         preflight_error: Optional[str] = None
+        compaction_requested = False
+        mode_changed_to: Optional[SessionMode] = None
         for tool_call in tool_calls:
             try:
                 parse_tool_call(tool_call)
@@ -149,6 +168,20 @@ def run_turn(
             else:
                 if preflight_error:
                     result = {"error": f"tool turn rejected: {preflight_error}"}
+                elif name == "switch_mode":
+                    requested = str(args.get("mode", "")).lower()
+                    if requested not in {"agent", "plan"}:
+                        result = {"error": "mode must be 'agent' or 'plan'"}
+                    elif requested == mode_state.current.value:
+                        result = {"action": "mode_unchanged", "mode": requested}
+                    elif confirm_mode(requested):
+                        mode_state.current = type(mode_state.current)(requested)
+                        mode_changed_to = mode_state.current
+                        result = {"action": "mode_changed", "mode": requested}
+                    else:
+                        result = {"action": "mode_change_rejected", "mode": requested}
+                elif not mode_state.allows_tool(name):
+                    result = {"error": f"tool '{name}' is not available in Plan Mode"}
                 elif name == "run_command":
                     approved, feedback = confirm_command(args.get("command", ""))
                     if approved:
@@ -157,6 +190,9 @@ def run_turn(
                         result = {"action": "command_rejected"}
                         if feedback:
                             result["feedback"] = feedback
+                elif name == "compact_conversation":
+                    result = {"action": "compaction_requested"}
+                    compaction_requested = True
                 elif name == "edit_file":
                     preview_args = dict(args, apply=False)
                     result = interruptible_call(execute_tool, name, preview_args)
@@ -191,4 +227,10 @@ def run_turn(
                     [{"type": "image_url", "image_url": {"url": result["image_url"]}}],
                 ))
                 conversation[-1]["image_context"] = True
+        if mode_changed_to is not None:
+            mode_changed(mode_changed_to)
         persist()
+        if compaction_requested:
+            compact(force=True)
+            persist()
+            continue

@@ -1,5 +1,55 @@
 # Changelog
 
+## [0.33.0](https://github.com/CubelliJ/harness/compare/v0.32.0...v0.33.0) (2026-09-08)
+
+
+### Features
+
+* add plan mode with grilling skill ([43f3175](https://github.com/CubelliJ/harness/commit/43f3175fba2cbfe4b10201a87d95a4d942364982))
+* add plan mode with grilling skill ([a191f30](https://github.com/CubelliJ/harness/commit/a191f30e9416b5e847359c5dda40f75fc82adf5d))
+
+## [0.32.0](https://github.com/CubelliJ/harness/compare/v0.31.1...v0.32.0) (2026-09-08)
+
+
+### Features
+
+* prefer proactive conversation compaction ([de29327](https://github.com/CubelliJ/harness/commit/de293276f5bde2583f0e18d72a6888464b7afc04))
+* prefer proactive conversation compaction ([5a9ca0f](https://github.com/CubelliJ/harness/commit/5a9ca0f35e3b0f3e0b987dca56e179283d3cdab9))
+
+## [0.31.1](https://github.com/CubelliJ/harness/compare/v0.31.0...v0.31.1) (2026-09-08)
+
+
+### Bug Fixes
+
+* correct manual conversation compaction ([623a383](https://github.com/CubelliJ/harness/commit/623a383dd23da128032d39d8227abdac625d3ee3))
+* correct manual conversation compaction ([e093c34](https://github.com/CubelliJ/harness/commit/e093c345dc4cbdba6d91a5b1a2d1ffe84d8ed303))
+* guide proactive conversation compaction ([e54c7a0](https://github.com/CubelliJ/harness/commit/e54c7a01dd11928e843a2f06244aff301b38baf6))
+
+## [0.31.0](https://github.com/CubelliJ/harness/compare/v0.30.0...v0.31.0) (2026-09-08)
+
+
+### Features
+
+* migrate skills to Agent Skills format ([a41ac73](https://github.com/CubelliJ/harness/commit/a41ac7341bc8d02799d9423ce0854d7107049fa1))
+* migrate skills to Agent Skills format ([01c3557](https://github.com/CubelliJ/harness/commit/01c355766ab4cec6b3031a075cc6624a08519f43))
+* migrate skills to Agent Skills format ([236f8ea](https://github.com/CubelliJ/harness/commit/236f8ea7573da41174ff284746afd2250c6312b0))
+
+## [0.30.0](https://github.com/CubelliJ/harness/compare/v0.29.0...v0.30.0) (2026-09-07)
+
+
+### Features
+
+* add LLM-driven conversation compaction ([a38abad](https://github.com/CubelliJ/harness/commit/a38abada0660e360d83f124bdda0e273586432db))
+* display conversation compaction status ([9e1c893](https://github.com/CubelliJ/harness/commit/9e1c8930eb75b45030fd1aeaf42f920f8a22ea4a))
+* let the model request conversation compaction ([390c2af](https://github.com/CubelliJ/harness/commit/390c2af5b665737bcb1ccd33d7b8219cb1f348ea))
+* summarize conversations during compaction ([3c27dcf](https://github.com/CubelliJ/harness/commit/3c27dcff294a891e70a3b1b907c86d8ac0c71b06))
+* tune automatic compaction threshold ([4ac5f68](https://github.com/CubelliJ/harness/commit/4ac5f68faa1bfce3dd6da41ac815f7842d1e71b8))
+
+
+### Bug Fixes
+
+* compact before showing handover ([82bf5ce](https://github.com/CubelliJ/harness/commit/82bf5cedc7ec645059235b61f24295395d51c5de))
+
 ## [0.29.0](https://github.com/CubelliJ/harness/compare/v0.28.1...v0.29.0) (2026-08-30)
 
 

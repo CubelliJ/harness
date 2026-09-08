@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 # Small visual cues keep the REPL feeling alive without changing its behavior.
 YOU_PROMPT = "\u001b[96m◆ You\u001b[0m  "
 ASSISTANT_PREFIX = "\u001b[92m◆ Assistant\u001b[0m  "
+PLAN_ASSISTANT_PREFIX = "\u001b[33m◆ Assistant\u001b[0m  "
 
 
 def _format_message(msg: Dict[str, Any]) -> str:
@@ -180,7 +181,7 @@ def conversation_cost(conversation: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     cost_known = True
     last: Optional[Dict[str, Any]] = None
     for message in conversation:
-        usage = message.get("usage")
+        usage = message.get("usage") or message.get("compaction_usage")
         if not isinstance(usage, dict):
             continue
         calls += 1
@@ -239,15 +240,19 @@ def compact_conversation(
     budget: Optional[int],
     token_counter: Callable[[Dict[str, Any]], int] = estimate_tokens,
     force: bool = False,
+    summarize: Optional[Callable[[Sequence[Dict[str, Any]]], Any]] = None,
+    on_start: Optional[Callable[[], None]] = None,
 ) -> bool:
     """Prune old turns until ``conversation`` fits within ``budget``.
 
     With ``force=True``, remove the oldest complete turn even when the
     conversation is already within its automatic compaction budget. This is
     used by the manual ``/compact`` command and does not require a provider
-    context limit. The system prompt is always retained, and eviction happens
-    only at complete user turns so assistant tool calls stay paired with their
-    tool results. Returns whether anything was compacted.
+    context limit. When supplied, ``summarize`` receives the complete history
+    before eviction and may return either summary text or ``(text, usage)``.
+    The system prompt is always retained, and eviction happens only at
+    complete user turns so assistant tool calls stay paired with their tool
+    results. Returns whether anything was compacted.
     """
     if not conversation or (not force and (
         budget is None or budget < 1 or sum(token_counter(m) for m in conversation) <= budget
@@ -260,12 +265,13 @@ def compact_conversation(
         index for index, message in enumerate(rest)
         if message.get("role") == "user" and not message.get("image_context")
     ]
-    # Preserve the newest user turn. Manual compaction removes one older turn;
-    # automatic compaction removes as many older turns as the budget requires.
+    # Preserve the newest user turn. Manual compaction removes all older
+    # complete turns; automatic compaction removes as many older turns as the
+    # budget requires.
     if len(user_boundaries) < (2 if force else 1):
         return False
     if force:
-        start = user_boundaries[1]
+        start = user_boundaries[-1]
     else:
         start = user_boundaries[-1]
         for boundary in user_boundaries[1:]:
@@ -276,11 +282,29 @@ def compact_conversation(
     removed = rest[:start]
     if not removed:
         return False
-    summary = {
+    if on_start is not None:
+        on_start()
+
+    summary_text = "[Earlier conversation compacted: %d messages omitted. Continue from the retained history.]" % len(removed)
+    summary_usage: Optional[Dict[str, Any]] = None
+    if summarize is not None:
+        try:
+            result = summarize(tuple(conversation))
+            if isinstance(result, tuple):
+                summary_text = str(result[0]).strip() or summary_text
+                if len(result) > 1 and isinstance(result[1], dict):
+                    summary_usage = result[1]
+            else:
+                summary_text = str(result).strip() or summary_text
+        except Exception as exc:  # summarization must never break the session
+            logger.warning("could not summarize conversation during compaction: %s", exc)
+
+    summary: Dict[str, Any] = {
         "role": "system",
-        "content": "[Earlier conversation compacted: %d messages omitted. Continue from the retained history.]"
-                   % len(removed),
+        "content": "[Conversation handover]\n" + summary_text,
     }
+    if summary_usage:
+        summary["compaction_usage"] = summary_usage
     conversation[:] = system + [summary] + rest[start:]
     logger.info("compacted conversation: removed %d messages", len(removed))
     return True

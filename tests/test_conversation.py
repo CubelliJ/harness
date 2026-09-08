@@ -89,6 +89,46 @@ class ConversationTestCase(unittest.TestCase):
         self.assertEqual(roles, ["system", "system", "user"])
         self.assertEqual(conversation[-1]["content"], "current request")
 
+    def test_compaction_uses_handover_summary_and_usage(self):
+        conversation = [
+            system_message("rules"),
+            user_message("old request"),
+            assistant_message("old answer"),
+            user_message("current request"),
+            assistant_message("current answer"),
+        ]
+        calls = []
+
+        def summarize(history):
+            calls.append(history)
+            return "Goal: continue the implementation.\nNext: run tests.", {"prompt_tokens": 9}
+
+        changed = compact_conversation(
+            conversation, 3, token_counter=lambda _: 1, summarize=summarize,
+        )
+        self.assertTrue(changed)
+        self.assertEqual(len(calls), 1)
+        self.assertIn("Goal: continue", conversation[1]["content"])
+        self.assertEqual(conversation[1]["compaction_usage"]["prompt_tokens"], 9)
+        self.assertEqual(conversation[-2:], [user_message("current request"), assistant_message("current answer")])
+
+    def test_compaction_calls_on_start_after_finding_removable_history(self):
+        conversation = [
+            system_message("rules"),
+            user_message("old request"),
+            assistant_message("old answer"),
+            user_message("current request"),
+        ]
+        started = []
+        changed = compact_conversation(
+            conversation,
+            3,
+            token_counter=lambda _: 1,
+            on_start=lambda: started.append(True),
+        )
+        self.assertTrue(changed)
+        self.assertEqual(started, [True])
+
     def test_manual_compaction_works_without_budget(self):
         conversation = [
             system_message("rules"),
@@ -103,6 +143,25 @@ class ConversationTestCase(unittest.TestCase):
         self.assertTrue(changed)
         self.assertEqual(conversation[0], system_message("rules"))
         self.assertIn("compacted", conversation[1]["content"])
+
+    def test_manual_compaction_removes_all_older_turns(self):
+        conversation = [
+            system_message("rules"),
+            user_message("first request"),
+            assistant_message("first answer"),
+            user_message("second request"),
+            assistant_message("second answer"),
+            user_message("current request"),
+            assistant_message("current answer"),
+        ]
+        changed = compact_conversation(
+            conversation, None, token_counter=lambda _: 1, force=True,
+        )
+        self.assertTrue(changed)
+        self.assertEqual(
+            [message.get("content") for message in conversation[2:]],
+            ["current request", "current answer"],
+        )
 
     def test_state_round_trip_and_session_catalog(self):
         with tempfile.TemporaryDirectory() as directory:
