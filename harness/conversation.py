@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 # Small visual cues keep the REPL feeling alive without changing its behavior.
 YOU_PROMPT = "\u001b[96m◆ You\u001b[0m  "
 ASSISTANT_PREFIX = "\u001b[92m◆ Assistant\u001b[0m  "
+PLAN_ASSISTANT_PREFIX = "\u001b[33m◆ Assistant\u001b[0m  "
 
 
 def _format_message(msg: Dict[str, Any]) -> str:

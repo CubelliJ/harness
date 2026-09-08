@@ -3,6 +3,7 @@ import unittest
 from contextlib import redirect_stdout
 
 from harness.cli.agent_loop import _append_interrupted_tool_results, run_turn
+from harness.cli.mode import ModeState, SessionMode
 
 
 class AgentLoopTestCase(unittest.TestCase):
@@ -104,6 +105,31 @@ class AgentLoopTestCase(unittest.TestCase):
         self.assertEqual(self.compactions, 3)
         self.assertIn("compaction_requested", output)
         self.assertEqual(self.conversation[-1]["content"], "Finished")
+
+    def test_plan_mode_rejects_mutating_tools(self):
+        state = ModeState(SessionMode.PLAN)
+        tool_call = {
+            "id": "edit-1",
+            "function": {"name": "edit_file", "arguments": "{}"},
+        }
+        responses = iter([(None, [tool_call], {}), ("No edit", [], {})])
+        with redirect_stdout(io.StringIO()):
+            run_turn(
+                self.conversation,
+                session_auto_approve=True,
+                compact=lambda: False,
+                persist=lambda: None,
+                maybe_generate_title=lambda: None,
+                confirm_command=lambda _: (True, ""),
+                confirm_edit=lambda _: (True, ""),
+                interruptible_call=lambda function, *args, **kwargs: (
+                    next(responses) if function.__name__ == "execute_llm_call"
+                    else {"action": "unexpected"}
+                ),
+                update_tokens=lambda _: None,
+                mode_state=state,
+            )
+        self.assertIn("not available in Plan Mode", self.conversation[2]["content"])
 
     def test_command_rejection_adds_feedback_without_running_tool(self):
         tool_call = {

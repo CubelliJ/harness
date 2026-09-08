@@ -7,6 +7,9 @@ from typing import Any, Dict, List, Optional
 from harness.skills import load_skill, skill_catalog
 from harness.tools import TOOL_REGISTRY
 
+# Session-level tools are handled by the active REPL, not the generic registry.
+TOOL_REGISTRY.setdefault("switch_mode", lambda **_: {"error": "switch_mode requires an active session"})
+
 SYSTEM_PROMPT = """\
 You are a coding assistant working in a local workspace with file, shell, and Git tools.
 
@@ -41,6 +44,24 @@ Do not claim tools are unavailable — call them.
 
 # OpenAI/OpenRouter function-calling schemas
 OPENAI_TOOLS: List[Dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "switch_mode",
+            "description": "Request a confirmed switch between Agent Mode and Plan Mode.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "mode": {
+                        "type": "string",
+                        "enum": ["agent", "plan"],
+                        "description": "The session mode to switch to",
+                    }
+                },
+                "required": ["mode"],
+            },
+        },
+    },
     {
         "type": "function",
         "function": {
