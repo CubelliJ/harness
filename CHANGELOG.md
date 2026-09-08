@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.33.0](https://github.com/CubelliJ/harness/compare/v0.32.0...v0.33.0) (2026-09-08)
+
+
+### Features
+
+* add plan mode with grilling skill ([43f3175](https://github.com/CubelliJ/harness/commit/43f3175fba2cbfe4b10201a87d95a4d942364982))
+* add plan mode with grilling skill ([a191f30](https://github.com/CubelliJ/harness/commit/a191f30e9416b5e847359c5dda40f75fc82adf5d))
+
 ## [0.32.0](https://github.com/CubelliJ/harness/compare/v0.31.1...v0.32.0) (2026-09-08)
 
 
