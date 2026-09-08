@@ -144,6 +144,25 @@ class ConversationTestCase(unittest.TestCase):
         self.assertEqual(conversation[0], system_message("rules"))
         self.assertIn("compacted", conversation[1]["content"])
 
+    def test_manual_compaction_removes_all_older_turns(self):
+        conversation = [
+            system_message("rules"),
+            user_message("first request"),
+            assistant_message("first answer"),
+            user_message("second request"),
+            assistant_message("second answer"),
+            user_message("current request"),
+            assistant_message("current answer"),
+        ]
+        changed = compact_conversation(
+            conversation, None, token_counter=lambda _: 1, force=True,
+        )
+        self.assertTrue(changed)
+        self.assertEqual(
+            [message.get("content") for message in conversation[2:]],
+            ["current request", "current answer"],
+        )
+
     def test_state_round_trip_and_session_catalog(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "session.json"

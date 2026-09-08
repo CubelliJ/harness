@@ -264,12 +264,13 @@ def compact_conversation(
         index for index, message in enumerate(rest)
         if message.get("role") == "user" and not message.get("image_context")
     ]
-    # Preserve the newest user turn. Manual compaction removes one older turn;
-    # automatic compaction removes as many older turns as the budget requires.
+    # Preserve the newest user turn. Manual compaction removes all older
+    # complete turns; automatic compaction removes as many older turns as the
+    # budget requires.
     if len(user_boundaries) < (2 if force else 1):
         return False
     if force:
-        start = user_boundaries[1]
+        start = user_boundaries[-1]
     else:
         start = user_boundaries[-1]
         for boundary in user_boundaries[1:]:
