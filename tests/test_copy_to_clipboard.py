@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 SCRIPT = (
     Path(__file__).parents[1]
-    / ".harness"
+    / "harness"
     / "skills"
     / "copy-to-clipboard"
     / "scripts"
