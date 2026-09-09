@@ -97,8 +97,8 @@ class LlmTestCase(unittest.TestCase):
             })
 
     @patch("harness.llm.urllib.request.urlopen")
-    @patch("harness.llm._headers", return_value={"Authorization": "Bearer test"})
-    def test_generate_conversation_title_uses_bounded_tool_free_excerpt(self, _headers, urlopen):
+    @patch.dict(os.environ, {"HARNESS_AUTH_MODE": "none", "HARNESS_MODEL": "example-model"}, clear=True)
+    def test_generate_conversation_title_uses_bounded_tool_free_excerpt(self, urlopen):
         response = unittest.mock.Mock()
         response.__enter__ = lambda self: self
         response.__exit__ = lambda *args: None
@@ -117,8 +117,8 @@ class LlmTestCase(unittest.TestCase):
         self.assertLessEqual(len(payload["messages"][1]["content"]), 1200)
 
     @patch("harness.llm.urllib.request.urlopen")
-    @patch("harness.llm._headers", return_value={"Authorization": "Bearer test"})
-    def test_summarize_conversation_reuses_history_as_prefix(self, _headers, urlopen):
+    @patch.dict(os.environ, {"HARNESS_AUTH_MODE": "none", "HARNESS_MODEL": "example-model"}, clear=True)
+    def test_summarize_conversation_reuses_history_as_prefix(self, urlopen):
         response = unittest.mock.Mock()
         response.__enter__ = lambda self: self
         response.__exit__ = lambda *args: None
