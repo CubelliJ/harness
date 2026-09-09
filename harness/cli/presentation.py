@@ -145,7 +145,7 @@ def _select_model(
         print(f"\033[91m\u25b8 model catalogue unavailable: {exc}\033[0m")
         return None
     if not models:
-        print("\033[90m\u25b8 OpenRouter returned no models\033[0m")
+        print(f"\033[90m\u25b8 {config.backend_config().display_name} returned no models\033[0m")
         return None
     query = argument.strip()
 
@@ -182,7 +182,7 @@ def _select_model(
         print(f"\033[90m\u25b8 choose a model number 1-{len(models)} from /model {filter_text}\033[0m")
         return None
 
-    print("\033[36mAvailable OpenRouter models:\033[0m")
+    print(f"\033[36mAvailable models from {config.backend_config().display_name}:\033[0m")
     for index, model in enumerate(models, 1):
         name = model.get("name") or model["id"]
         print(f"  {index:>3}. {name}  \033[90m{model['id']} \u00b7 {_format_model_context(model)} tokens\033[0m")
