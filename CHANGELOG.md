@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.34.0](https://github.com/CubelliJ/harness/compare/v0.33.1...v0.34.0) (2026-09-09)
+
+
+### Features
+
+* add configurable OpenAI-compatible backend ([5daebbb](https://github.com/CubelliJ/harness/commit/5daebbb56c97a604089cf670690bcc929317da26))
+* add configurable OpenAI-compatible backend ([b20b91a](https://github.com/CubelliJ/harness/commit/b20b91a7df59f392553af2fc23b8da3c6ab6d416))
+
 ## [0.33.1](https://github.com/CubelliJ/harness/compare/v0.33.0...v0.33.1) (2026-09-09)
 
 
