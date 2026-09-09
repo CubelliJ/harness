@@ -1,18 +1,50 @@
-"""Minimal config: OpenRouter + workspace."""
+"""Configuration for the active OpenAI-compatible backend."""
 
 import getpass
 import logging
 import os
 import sys
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+OPENROUTER_CHAT_URL = f"{OPENROUTER_BASE_URL}/chat/completions"
+OPENROUTER_MODELS_URL = f"{OPENROUTER_BASE_URL}/models"
 OPENROUTER_MODEL = "openai/gpt-5.6-luna"
 REQUEST_TIMEOUT_S = 600
+DEFAULT_AUTH_MODE = "bearer"
+DEFAULT_BACKEND_NAME = "OpenRouter"
+
+
+@dataclass(frozen=True)
+class BackendConfig:
+    name: str
+    base_url: str
+    chat_url: str
+    models_url: str
+    model: str
+    api_key: str
+    auth_mode: str
+    timeout_s: int
+    reasoning_effort: Optional[str]
+
+    @property
+    def display_name(self) -> str:
+        return self.name
+
+    def headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if self.auth_mode == "bearer":
+            if not self.api_key:
+                raise RuntimeError(
+                    f"{self.name} requires HARNESS_API_KEY when HARNESS_AUTH_MODE=bearer."
+                )
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
 MODEL_METADATA_TIMEOUT_S = 3
 CONTEXT_COMPACTION_RATIO = 0.25
 CONTEXT_COMPACTION_CAP = 200_000
@@ -39,18 +71,47 @@ def global_config_path() -> Path:
 
 
 def _try_load_dotenv() -> None:
-    """Load global, project, then workspace config; shell variables always win."""
-    # The source checkout .env remains useful during development, but an installed
-    # Harness must never depend on the directory where its package was installed.
-    candidates = [global_config_path(), Path.cwd() / ".env"]
-    source_env = Path(__file__).resolve().parent.parent / ".env"
-    if source_env != Path.cwd() / ".env":
-        candidates.append(source_env)
-    # Workspace config is most specific, so it overrides the generic .env files.
-    candidates.append(workspace_config_path())
+    """Load least-specific config first; shell variables always win."""
+    candidates = [global_config_path(), Path.cwd() / ".env", workspace_config_path()]
+    shell_keys = set(os.environ)
     for path in candidates:
         for key, value in _read_dotenv(path).items():
-            os.environ.setdefault(key, value)
+            if key in shell_keys:
+                continue
+            os.environ[key] = value
+            if key == "HARNESS_MODEL" and "OPENROUTER_MODEL" not in shell_keys:
+                os.environ["OPENROUTER_MODEL"] = value
+
+
+def backend_config() -> BackendConfig:
+    """Resolve generic settings, falling back to the legacy OpenRouter preset."""
+    base_url = os.environ.get("HARNESS_BASE_URL", OPENROUTER_BASE_URL).strip().rstrip("/")
+    chat_url = os.environ.get("HARNESS_CHAT_URL", "").strip() or f"{base_url}/chat/completions"
+    models_url = os.environ.get("HARNESS_MODELS_URL", "").strip() or f"{base_url}/models"
+    model = os.environ.get("HARNESS_MODEL", "").strip()
+    if not model:
+        model = os.environ.get("OPENROUTER_MODEL", OPENROUTER_MODEL).strip() or OPENROUTER_MODEL
+    api_key = os.environ.get("HARNESS_API_KEY", "").strip()
+    if not api_key:
+        api_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+    auth_mode = os.environ.get("HARNESS_AUTH_MODE", DEFAULT_AUTH_MODE).strip().lower() or DEFAULT_AUTH_MODE
+    if auth_mode not in {"none", "bearer"}:
+        raise ValueError("HARNESS_AUTH_MODE must be one of: none, bearer")
+    try:
+        timeout_s = int(os.environ.get("HARNESS_REQUEST_TIMEOUT_S", REQUEST_TIMEOUT_S))
+    except ValueError as exc:
+        raise ValueError("HARNESS_REQUEST_TIMEOUT_S must be an integer") from exc
+    return BackendConfig(
+        name=os.environ.get("HARNESS_BACKEND_NAME", DEFAULT_BACKEND_NAME).strip() or DEFAULT_BACKEND_NAME,
+        base_url=base_url,
+        chat_url=chat_url,
+        models_url=models_url,
+        model=model,
+        api_key=api_key,
+        auth_mode=auth_mode,
+        timeout_s=timeout_s,
+        reasoning_effort=os.environ.get("HARNESS_REASONING_EFFORT", "").strip() or None,
+    )
 
 
 def _save_config(path: Path, key: str, value: str) -> None:
@@ -105,7 +166,7 @@ def workspace_root() -> Path:
 
 
 def get_model() -> str:
-    return os.environ.get("OPENROUTER_MODEL", OPENROUTER_MODEL).strip() or OPENROUTER_MODEL
+    return backend_config().model
 
 
 def workspace_config_path() -> Path:
@@ -123,14 +184,15 @@ def save_workspace_model(model: str) -> Path:
     if not value:
         raise ValueError("model id cannot be empty")
     path = workspace_config_path()
-    _save_config(path, "OPENROUTER_MODEL", value)
+    _save_config(path, "HARNESS_MODEL", value)
     os.environ["OPENROUTER_MODEL"] = value
     return path
 
 
 def workspace_model() -> str:
     """Return the model saved for this workspace, or an empty string if none."""
-    return _read_dotenv(workspace_config_path()).get("OPENROUTER_MODEL", "")
+    values = _read_dotenv(workspace_config_path())
+    return values.get("HARNESS_MODEL", values.get("OPENROUTER_MODEL", ""))
 
 
 def set_model(model: str) -> None:
@@ -138,7 +200,7 @@ def set_model(model: str) -> None:
     value = model.strip()
     if not value:
         raise ValueError("model id cannot be empty")
-    os.environ["OPENROUTER_MODEL"] = value
+    os.environ["HARNESS_MODEL"] = value
 
 
 def history_file_path() -> Path:
@@ -165,14 +227,20 @@ def dry_run() -> bool:
 
 def init() -> None:
     _try_load_dotenv()
-    if not os.environ.get("OPENROUTER_API_KEY", "").strip():
-        if sys.stdin.isatty() and sys.stdout.isatty():
+    active = backend_config()
+    if active.auth_mode == "bearer" and not active.api_key:
+        if not os.environ.get("HARNESS_API_KEY", "").strip() and os.environ.get("OPENROUTER_API_KEY", "").strip():
+            os.environ["HARNESS_API_KEY"] = os.environ["OPENROUTER_API_KEY"]
+            active = backend_config()
+        elif sys.stdin.isatty() and sys.stdout.isatty():
             if not configure():
-                raise RuntimeError("OPENROUTER_API_KEY is required to use Harness.")
+                raise RuntimeError("An API key is required when HARNESS_AUTH_MODE=bearer.")
+            os.environ["HARNESS_API_KEY"] = os.environ.get("OPENROUTER_API_KEY", "")
+            active = backend_config()
         else:
             raise RuntimeError(
-                "OPENROUTER_API_KEY is not configured. Run `python -m harness configure` "
-                "or set the environment variable."
+                "No API key is configured for bearer authentication. Set HARNESS_API_KEY "
+                "or the legacy OPENROUTER_API_KEY, or use HARNESS_AUTH_MODE=none."
             )
     logging.basicConfig(
         level=getattr(logging, os.environ.get("HARNESS_LOG_LEVEL", "INFO").upper(), logging.INFO),

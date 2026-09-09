@@ -1,3 +1,5 @@
+import json
+import os
 import unittest
 from unittest.mock import patch
 
@@ -134,6 +136,32 @@ class LlmTestCase(unittest.TestCase):
         self.assertEqual(payload["tools"], [])
         self.assertEqual(payload["tool_choice"], "none")
         self.assertIn("handover", payload["messages"][-1]["content"])
+
+    @patch("harness.llm._models_response", side_effect=OSError("unavailable"))
+    @patch.dict(os.environ, {"HARNESS_MODEL": "example-model", "HARNESS_AUTH_MODE": "none"}, clear=True)
+    def test_available_models_falls_back_to_configured_model(self, _response):
+        self.assertEqual(get_available_models(), [{"id": "example-model", "name": "example-model"}])
+
+    @patch("harness.llm.urllib.request.urlopen")
+    @patch.dict(os.environ, {
+        "HARNESS_MODELS_URL": "https://gateway.example.com/models",
+        "HARNESS_AUTH_MODE": "none",
+        "HARNESS_MODEL": "example-model",
+    }, clear=True)
+    def test_models_use_configured_url_and_preserve_context_length(self, urlopen):
+        response = unittest.mock.Mock()
+        response.__enter__ = lambda self: self
+        response.__exit__ = lambda *args: None
+        response.read.return_value = json.dumps({"data": [
+            {"id": "model-b"},
+            {"id": "model-a", "name": "Model A", "context_length": 8192},
+        ]}).encode()
+        urlopen.return_value = response
+        models = get_available_models()
+        self.assertEqual([model["id"] for model in models], ["model-a", "model-b"])
+        self.assertEqual(models[0]["context_length"], 8192)
+        self.assertEqual(urlopen.call_args.args[0].full_url, "https://gateway.example.com/models")
+        self.assertNotIn("Authorization", urlopen.call_args.args[0].headers)
 
     def test_model_context_length(self):
         body = {"data": [{"id": "model-a", "context_length": 128000}]}

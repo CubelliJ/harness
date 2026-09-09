@@ -8,6 +8,67 @@ from unittest.mock import patch
 from harness import config
 
 
+class BackendConfigTests(unittest.TestCase):
+    def setUp(self):
+        self.env = patch.dict(os.environ, {}, clear=True)
+        self.env.start()
+        self.addCleanup(self.env.stop)
+
+    def test_generic_urls_are_derived_and_trailing_slash_is_removed(self):
+        os.environ.update({
+            "HARNESS_BASE_URL": "https://gateway.example.com/v1///",
+            "HARNESS_MODEL": "example-model",
+            "HARNESS_AUTH_MODE": "none",
+        })
+        active = config.backend_config()
+        self.assertEqual(active.base_url, "https://gateway.example.com/v1")
+        self.assertEqual(active.chat_url, "https://gateway.example.com/v1/chat/completions")
+        self.assertEqual(active.models_url, "https://gateway.example.com/v1/models")
+
+    def test_explicit_urls_and_generic_values_override_legacy_values(self):
+        os.environ.update({
+            "HARNESS_BASE_URL": "https://gateway.example.com/v1",
+            "HARNESS_CHAT_URL": "https://gateway.example.com/chat",
+            "HARNESS_MODELS_URL": "https://gateway.example.com/models",
+            "HARNESS_API_KEY": "generic-key",
+            "HARNESS_MODEL": "example-model",
+            "HARNESS_AUTH_MODE": "bearer",
+            "HARNESS_BACKEND_NAME": "Example Gateway",
+            "OPENROUTER_API_KEY": "legacy-key",
+            "OPENROUTER_MODEL": "legacy-model",
+        })
+        active = config.backend_config()
+        self.assertEqual(active.chat_url, "https://gateway.example.com/chat")
+        self.assertEqual(active.models_url, "https://gateway.example.com/models")
+        self.assertEqual(active.api_key, "generic-key")
+        self.assertEqual(active.model, "example-model")
+        self.assertEqual(active.name, "Example Gateway")
+
+    def test_auth_headers_support_none_and_bearer(self):
+        os.environ.update({"HARNESS_AUTH_MODE": "none", "HARNESS_API_KEY": "secret"})
+        self.assertNotIn("Authorization", config.backend_config().headers())
+        os.environ["HARNESS_AUTH_MODE"] = "bearer"
+        self.assertEqual(config.backend_config().headers()["Authorization"], "Bearer secret")
+
+    def test_bearer_without_key_fails_clearly(self):
+        os.environ["HARNESS_AUTH_MODE"] = "bearer"
+        with self.assertRaisesRegex(RuntimeError, "HARNESS_API_KEY"):
+            config.backend_config().headers()
+
+    def test_machine_then_workspace_config_precedence(self):
+        with tempfile.TemporaryDirectory() as home, tempfile.TemporaryDirectory() as workspace:
+            machine = Path(home) / ".harness" / "config.env"
+            machine.parent.mkdir()
+            machine.write_text("HARNESS_BACKEND_NAME=Machine\nHARNESS_MODEL=machine-model\n")
+            workspace_file = Path(workspace) / ".harness" / "config.env"
+            workspace_file.parent.mkdir()
+            workspace_file.write_text("HARNESS_MODEL=workspace-model\n")
+            os.environ.update({"HOME": home, "HARNESS_WORKSPACE": workspace})
+            config._try_load_dotenv()
+            self.assertEqual(os.environ["HARNESS_BACKEND_NAME"], "Machine")
+            self.assertEqual(config.get_model(), "workspace-model")
+
+
 class WorkspaceModelTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
