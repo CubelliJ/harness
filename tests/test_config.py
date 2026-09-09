@@ -76,8 +76,9 @@ class WorkspaceModelTests(unittest.TestCase):
         self.workspace = Path(tmp.name)
         env_patcher = patch.dict(os.environ, {"HARNESS_WORKSPACE": str(self.workspace)})
         env_patcher.start()
+        os.environ.pop("HARNESS_MODEL", None)
+        os.environ.pop("OPENROUTER_MODEL", None)
         self.addCleanup(env_patcher.stop)
-        self.addCleanup(os.environ.pop, "OPENROUTER_MODEL", None)
 
     def test_workspace_config_path_is_under_harness_dir(self):
         path = config.workspace_config_path()
