@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.33.1](https://github.com/CubelliJ/harness/compare/v0.33.0...v0.33.1) (2026-09-09)
+
+
+### Bug Fixes
+
+* **deps:** update CI actions and build tooling ([#90](https://github.com/CubelliJ/harness/issues/90)) ([457ef76](https://github.com/CubelliJ/harness/commit/457ef76c555ce38f87a158b5f6f74d1861ffe23a))
+
 ## [0.33.0](https://github.com/CubelliJ/harness/compare/v0.32.0...v0.33.0) (2026-09-08)
 
 
