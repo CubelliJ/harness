@@ -67,27 +67,32 @@ logger = logging.getLogger(__name__)
 CONTEXT_NUDGE_THRESHOLDS = (0.2, 0.4, 0.6, 0.8)
 CONTEXT_NUDGE_TEXT = {
     0.2: (
-        "Context usage has reached 20% of the model budget. Compaction is optional, "
-        "not the objective: if the current phase is complete and older details are "
-        "no longer needed, you may call compact_conversation."
+        "Context usage has reached 20% of the model budget. Pause at the end of the "
+        "current phase and assess whether older details are still needed. If that phase "
+        "is complete, proactively call compact_conversation to avoid paying to repeat "
+        "irrelevant history. Compaction is optional, not the objective, and must not "
+        "interrupt an unfinished tool exchange."
     ),
     0.4: (
-        "Context usage has reached 40% of the model budget. Repeated older input can "
-        "increase input-token cost. If prior work is complete and not needed for the "
-        "next step, consider compact_conversation; do not compact during an unfinished "
-        "tool exchange."
+        "Context usage has reached 40% of the model budget. Continuing to carry completed "
+        "or repetitive history increases input-token cost on every request. Before doing "
+        "more work, check whether the current phase is complete; if older details are not "
+        "needed for the next step, proactively call compact_conversation. Do not compact "
+        "during an unfinished tool exchange."
     ),
     0.6: (
-        "Context usage has reached 60% of the model budget. Be cost-conscious about "
-        "re-sending repetitive history: if the next step does not need older details, "
-        "prefer a concise handover via compact_conversation. Compaction is a means, "
-        "not the objective, and must not interrupt an unfinished tool exchange."
+        "Context usage has reached 60% of the model budget. Treat retaining irrelevant "
+        "history as a cost that compounds with every provider request. Unless the next "
+        "step genuinely depends on the older transcript, call compact_conversation now "
+        "after completing the current phase. Compaction is a means to reduce repeated "
+        "input, not the objective, and must not interrupt an unfinished tool exchange."
     ),
     0.8: (
-        "Context usage has reached 80% of the model budget. Before continuing with "
-        "more exploration, strongly consider compact_conversation if older context is "
-        "no longer essential; repeated input is costly. Do not compact merely for its "
-        "own sake or during an unfinished tool exchange."
+        "Context usage has reached 80% of the model budget. Do not continue broad "
+        "exploration while carrying history that is no longer essential. Complete the "
+        "current phase, then proactively call compact_conversation before the next phase "
+        "to avoid expensive repeated input. Only skip it when the older context is "
+        "genuinely required; never compact during an unfinished tool exchange."
     ),
 }
 
