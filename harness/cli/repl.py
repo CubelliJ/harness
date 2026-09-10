@@ -64,6 +64,59 @@ from harness.cli.voice_ui import pause_voice_session, voice_loop
 
 logger = logging.getLogger(__name__)
 
+CONTEXT_NUDGE_THRESHOLDS = (0.2, 0.4, 0.6, 0.8)
+CONTEXT_NUDGE_TEXT = {
+    0.2: (
+        "Context usage has reached 20% of the model budget. Compaction is optional, "
+        "not the objective: if the current phase is complete and older details are "
+        "no longer needed, you may call compact_conversation."
+    ),
+    0.4: (
+        "Context usage has reached 40% of the model budget. Repeated older input can "
+        "increase input-token cost. If prior work is complete and not needed for the "
+        "next step, consider compact_conversation; do not compact during an unfinished "
+        "tool exchange."
+    ),
+    0.6: (
+        "Context usage has reached 60% of the model budget. Be cost-conscious about "
+        "re-sending repetitive history: if the next step does not need older details, "
+        "prefer a concise handover via compact_conversation. Compaction is a means, "
+        "not the objective, and must not interrupt an unfinished tool exchange."
+    ),
+    0.8: (
+        "Context usage has reached 80% of the model budget. Before continuing with "
+        "more exploration, strongly consider compact_conversation if older context is "
+        "no longer essential; repeated input is costly. Do not compact merely for its "
+        "own sake or during an unfinished tool exchange."
+    ),
+}
+
+
+def append_context_budget_nudges(
+    conversation: list[dict],
+    prompt_tokens: Optional[int],
+    context_limit: Optional[int],
+    sent_thresholds: set[float],
+) -> None:
+    """Append persisted cost-awareness guidance for newly crossed thresholds."""
+    if (
+        not isinstance(prompt_tokens, int)
+        or isinstance(prompt_tokens, bool)
+        or prompt_tokens < 0
+        or not isinstance(context_limit, int)
+        or isinstance(context_limit, bool)
+        or context_limit < 1
+    ):
+        return
+    for threshold in CONTEXT_NUDGE_THRESHOLDS:
+        if threshold in sent_thresholds or prompt_tokens < context_limit * threshold:
+            continue
+        message = system_message(CONTEXT_NUDGE_TEXT[threshold])
+        message["context_budget_nudge"] = threshold
+        conversation.append(message)
+        sent_thresholds.add(threshold)
+
+
 def run_repl(initial_request: str = "", reload: bool = False) -> None:
     """Run the REPL, optionally resuming the persisted conversation."""
     _banner()
@@ -87,6 +140,11 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
             session_title = selected.get("title") if selected else None
     conversation = load_conversation_state(state_path) if reload else None
     resumed = conversation is not None
+    sent_context_nudges = {
+        message.get("context_budget_nudge")
+        for message in (conversation or [])
+        if isinstance(message.get("context_budget_nudge"), float)
+    }
     if conversation is not None:
         # Older interrupted sessions may contain an assistant tool call with
         # no result. Repair that state before the first resumed provider call.
@@ -153,7 +211,10 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
         print(handovers[-1].split("\n", 1)[-1])
 
     def compact(force: bool = False) -> bool:
-        nonlocal context_tokens
+        nonlocal context_tokens, sent_context_nudges
+        append_context_budget_nudges(
+            conversation, context_tokens, context_limit, sent_context_nudges,
+        )
         changed = compact_conversation(
             conversation,
             compaction_budget(),
@@ -163,11 +224,13 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
         )
         if changed:
             context_tokens = None
+            sent_context_nudges = set()
             persist()
         return changed
 
     def clear_conversation() -> None:
         nonlocal history_path, state_path, session_title, title_generated, session_registered
+        sent_context_nudges.clear()
         conversation[:] = [
             system_message(get_full_system_prompt(workspace)),
             system_message("[New conversation started. Treat the next request as a fresh task.]"),

@@ -4,6 +4,38 @@ from contextlib import redirect_stdout
 
 from harness.cli.agent_loop import _append_interrupted_tool_results, run_turn
 from harness.cli.mode import ModeState, SessionMode
+from harness.cli.repl import append_context_budget_nudges
+
+
+class ContextBudgetNudgeTestCase(unittest.TestCase):
+    def test_nudges_are_added_once_at_each_provider_usage_threshold(self):
+        conversation = [{"role": "system", "content": "system"}]
+        sent = set()
+
+        append_context_budget_nudges(conversation, 39_999, 200_000, sent)
+        self.assertEqual(len(conversation), 1)
+        append_context_budget_nudges(conversation, 160_000, 200_000, sent)
+        self.assertEqual(
+            [message["context_budget_nudge"] for message in conversation[1:]],
+            [0.2, 0.4, 0.6, 0.8],
+        )
+        append_context_budget_nudges(conversation, 200_000, 200_000, sent)
+        self.assertEqual(len(conversation), 5)
+
+    def test_nudges_ignore_missing_or_invalid_provider_usage(self):
+        conversation = [{"role": "system", "content": "system"}]
+        sent = set()
+        for prompt_tokens in (None, -1, True, "40000"):
+            append_context_budget_nudges(conversation, prompt_tokens, 200_000, sent)
+        self.assertEqual(len(conversation), 1)
+
+    def test_nudges_explain_compaction_is_optional_and_costly_history(self):
+        conversation = [{"role": "system", "content": "system"}]
+        append_context_budget_nudges(conversation, 120_000, 200_000, set())
+        content = "\n".join(message["content"] for message in conversation[1:])
+        self.assertIn("optional", content)
+        self.assertIn("input-token cost", content)
+        self.assertIn("not the objective", content)
 
 
 class AgentLoopTestCase(unittest.TestCase):
