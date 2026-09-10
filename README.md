@@ -1,7 +1,8 @@
 # Harness
 
 Harness is a lightweight CLI coding agent that can inspect, edit, and test files
-in your workspace using [OpenRouter](https://openrouter.ai/).
+in your workspace using an OpenAI-compatible API. OpenRouter remains the default
+compatibility preset.
 
 ## Quick start
 
@@ -32,7 +33,7 @@ commands.
 Useful commands:
 
 - `/help` — show available commands
-- `/model` — list available OpenRouter models with context windows
+- `/model` — list available models from the active backend with context windows
 - `/model <number|provider/model-id>` — switch models for the session; optionally
   save the choice as the workspace default in `.harness/config.env`
 - `/model <search>` — filter the catalogue by text, e.g. `/model open` lists

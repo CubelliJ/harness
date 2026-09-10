@@ -1,4 +1,4 @@
-"""OpenRouter chat client with native tool calling."""
+"""OpenAI-compatible chat client with native tool calling."""
 
 import json
 import logging
@@ -8,13 +8,7 @@ import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
 
-from harness.config import (
-    OPENROUTER_CHAT_URL,
-    MODEL_METADATA_TIMEOUT_S,
-    OPENROUTER_MODELS_URL,
-    REQUEST_TIMEOUT_S,
-    get_model,
-)
+from harness.config import BackendConfig, MODEL_METADATA_TIMEOUT_S, backend_config
 from harness.registry import OPENAI_TOOLS
 
 logger = logging.getLogger(__name__)
@@ -27,33 +21,43 @@ TITLE_MAX_OUTPUT_TOKENS = 16
 COMPACTION_MAX_OUTPUT_TOKENS = 1200
 
 
-def _models_response() -> Dict[str, Any]:
-    """Fetch the model catalogue from OpenRouter."""
+def _models_response(active: Optional[BackendConfig] = None) -> Dict[str, Any]:
+    """Fetch the model catalogue from the active backend."""
+    active = active or backend_config()
     with urllib.request.urlopen(
-        urllib.request.Request(OPENROUTER_MODELS_URL, headers=_headers()),
+        urllib.request.Request(active.models_url, headers=active.headers()),
         timeout=MODEL_METADATA_TIMEOUT_S,
     ) as response:
         body = json.loads(response.read().decode("utf-8"))
     if not isinstance(body, dict):
-        raise ValueError("OpenRouter models response is not an object")
+        raise ValueError(f"{active.display_name} models response is not an object")
     return body
 
 
 def get_available_models() -> List[Dict[str, Any]]:
-    """Return usable model records from OpenRouter's model catalogue."""
-    body = _models_response()
-    models = []
-    for model in body.get("data") or []:
-        if isinstance(model, dict) and isinstance(model.get("id"), str) and model["id"].strip():
-            models.append(model)
-    return sorted(models, key=lambda model: (model.get("name") or model["id"]).lower())
+    """Return usable model records from the active backend's catalogue."""
+    active = backend_config()
+    try:
+        body = _models_response(active)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        if active.model:
+            logger.warning("Could not retrieve %s models: %s", active.display_name, exc)
+            return [{"id": active.model, "name": active.model}]
+        raise RuntimeError(
+            f"Could not discover models from {active.display_name}, and no model is configured."
+        ) from exc
+    models = [
+        model for model in (body.get("data") or [])
+        if isinstance(model, dict) and isinstance(model.get("id"), str) and model["id"].strip()
+    ]
+    return sorted(models, key=lambda model: (str(model.get("name") or model["id"]).lower(), model["id"].lower()))
 
 
 def filter_models(models: List[Dict[str, Any]], query: str) -> List[Dict[str, Any]]:
     """Return models whose id or display name contains the query.
 
     Matching is case-insensitive on a plain substring, so a short prefix like
-    ``open`` narrows the catalogue to OpenAI and OpenRouter models.
+    Matching applies to both model IDs and display names.
     """
     needle = query.strip().lower()
     if not needle:
@@ -66,9 +70,10 @@ def filter_models(models: List[Dict[str, Any]], query: str) -> List[Dict[str, An
 
 
 def get_model_context_length() -> Optional[int]:
-    """Return the provider-reported context limit for the configured model."""
+    """Return the backend-reported context limit for the configured model."""
+    active = backend_config()
     try:
-        return model_context_length(_models_response(), get_model())
+        return model_context_length(_models_response(active), active.model)
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
         logger.warning("Could not retrieve model context length: %s", exc)
     return None
@@ -92,16 +97,8 @@ def _retry_after_s(attempt: int) -> float:
     return RETRY_BASE_S * (2 ** attempt)
 
 
-def _headers() -> Dict[str, str]:
-    key = os.environ.get("OPENROUTER_API_KEY", "").strip()
-    if not key:
-        raise RuntimeError(
-            "OPENROUTER_API_KEY is not set. Add it to your environment or `.env` file."
-        )
-    return {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {key}",
-    }
+def _headers(active: Optional[BackendConfig] = None) -> Dict[str, str]:
+    return (active or backend_config()).headers()
 
 
 def _api_messages(conversation: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -135,6 +132,7 @@ def _api_messages(conversation: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 def _stream_completion(
     response: Any,
     on_text: Optional[Any] = None,
+    backend_name: str = "backend",
 ) -> Tuple[str, List[Dict[str, Any]], Dict[str, Any]]:
     """Consume an SSE response fully, emit text fragments, and assemble tool calls."""
     content_parts: List[str] = []
@@ -158,9 +156,9 @@ def _stream_completion(
         try:
             chunk = json.loads(data)
         except json.JSONDecodeError as exc:
-            raise RuntimeError(f"OpenRouter returned invalid stream data: {exc.msg}") from exc
+            raise RuntimeError(f"{backend_name} returned invalid stream data: {exc.msg}") from exc
         if chunk.get("error"):
-            raise RuntimeError(f"OpenRouter error: {chunk['error']}")
+            raise RuntimeError(f"{backend_name} error: {chunk['error']}")
         if chunk.get("usage"):
             usage = chunk["usage"]
         choices = chunk.get("choices") or []
@@ -177,7 +175,7 @@ def _stream_completion(
         for call in delta.get("tool_calls") or []:
             index = call.get("index", 0)
             if not isinstance(index, int):
-                raise RuntimeError("OpenRouter returned an invalid tool call index")
+                raise RuntimeError(f"{backend_name} returned an invalid tool call index")
             target = tool_calls.setdefault(index, {"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
             if call.get("id"):
                 target["id"] = call["id"]
@@ -200,25 +198,25 @@ def _stream_completion(
                     target["function"]["name"] += name_fragment
             arguments = function.get("arguments")
             if arguments is not None and not isinstance(arguments, str):
-                raise RuntimeError("OpenRouter returned non-string tool arguments")
+                raise RuntimeError(f"{backend_name} returned non-string tool arguments")
             if arguments:
                 target["function"]["arguments"] += arguments
 
     if not completed:
-        raise RuntimeError("OpenRouter stream ended before [DONE]")
+        raise RuntimeError(f"{backend_name} stream ended before [DONE]")
     ordered_tools = [tool_calls[index] for index in sorted(tool_calls)]
     if finish_reason == "tool_calls" and not ordered_tools:
-        raise RuntimeError("OpenRouter finished with tool calls but returned none")
+        raise RuntimeError(f"{backend_name} finished with tool calls but returned none")
     seen_ids = set()
     for call in ordered_tools:
         call_id = call.get("id")
         function = call.get("function") or {}
         if not isinstance(call_id, str) or not call_id.strip():
-            raise RuntimeError("OpenRouter returned a tool call without an id")
+            raise RuntimeError(f"{backend_name} returned a tool call without an id")
         if call_id in seen_ids:
-            raise RuntimeError("OpenRouter returned duplicate tool call ids")
+            raise RuntimeError(f"{backend_name} returned duplicate tool call ids")
         if not isinstance(function.get("name"), str) or not function["name"].strip():
-            raise RuntimeError("OpenRouter returned a tool call without a function name")
+            raise RuntimeError(f"{backend_name} returned a tool call without a function name")
         seen_ids.add(call_id)
     return "".join(content_parts), ordered_tools, usage
 
@@ -233,24 +231,26 @@ def execute_llm_call(
     remains compatible with the previous client API, while streaming keeps
     the CLI responsive during long generations.
     """
-    model = get_model()
-    payload = json.dumps(
-        {
-            "model": model,
-            "messages": _api_messages(conversation),
-            "tools": OPENAI_TOOLS,
-            "tool_choice": "auto",
-            "stream": True,
-            "stream_options": {"include_usage": True},
-        }
-    ).encode()
+    active = backend_config()
+    model = active.model
+    payload_data: Dict[str, Any] = {
+        "model": model,
+        "messages": _api_messages(conversation),
+        "tools": OPENAI_TOOLS,
+        "tool_choice": "auto",
+        "stream": True,
+        "stream_options": {"include_usage": True},
+    }
+    if active.reasoning_effort is not None:
+        payload_data["reasoning_effort"] = active.reasoning_effort
+    payload = json.dumps(payload_data).encode()
     t0 = time.perf_counter()
     last_error: Optional[BaseException] = None
     emitted = False
 
     for attempt in range(MAX_RETRIES):
         request = urllib.request.Request(
-            OPENROUTER_CHAT_URL, data=payload, method="POST", headers=_headers()
+            active.chat_url, data=payload, method="POST", headers=active.headers()
         )
         try:
             def forward_text(fragment: str) -> None:
@@ -259,11 +259,11 @@ def execute_llm_call(
                 if on_text is not None:
                     on_text(fragment)
 
-            with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_S) as response:
-                content, tool_calls, usage = _stream_completion(response, forward_text)
+            with urllib.request.urlopen(request, timeout=active.timeout_s) as response:
+                content, tool_calls, usage = _stream_completion(response, forward_text, active.display_name)
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", errors="replace")
-            last_error = RuntimeError(f"OpenRouter HTTP {e.code}: {detail}")
+            last_error = RuntimeError(f"{active.display_name} HTTP {e.code}: {detail}")
             if e.code == 429 and not emitted and attempt < MAX_RETRIES - 1:
                 wait = _retry_after_s(attempt)
                 print(f"\033[90m▸ rate limited; retrying in {wait:.0f}s…\033[0m")
@@ -280,7 +280,8 @@ def execute_llm_call(
             raise
 
         logger.debug(
-            "OpenRouter OK in %.2fs chars=%d tool_calls=%d",
+            "%s OK in %.2fs chars=%d tool_calls=%d",
+            active.display_name,
             time.perf_counter() - t0,
             len(content),
             len(tool_calls),
@@ -300,6 +301,7 @@ def summarize_conversation(
     a new user message. Providers can therefore reuse the prior conversation's
     cached input rather than paying to process an unrelated excerpt.
     """
+    active = backend_config()
     messages = _api_messages(conversation)
     messages.append({
         "role": "user",
@@ -311,26 +313,29 @@ def summarize_conversation(
             "Return only the handover summary in Markdown; do not make tool calls."
         ),
     })
-    payload = json.dumps({
-        "model": get_model(),
+    payload_data: Dict[str, Any] = {
+        "model": active.model,
         "messages": messages,
         "tools": [],
         "tool_choice": "none",
         "max_tokens": COMPACTION_MAX_OUTPUT_TOKENS,
         "stream": False,
-    }).encode()
+    }
+    if active.reasoning_effort is not None:
+        payload_data["reasoning_effort"] = active.reasoning_effort
+    payload = json.dumps(payload_data).encode()
     request = urllib.request.Request(
-        OPENROUTER_CHAT_URL, data=payload, method="POST", headers=_headers()
+        active.chat_url, data=payload, method="POST", headers=active.headers()
     )
-    with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_S) as response:
+    with urllib.request.urlopen(request, timeout=active.timeout_s) as response:
         body = json.loads(response.read().decode("utf-8"))
     if body.get("error"):
-        raise RuntimeError(f"OpenRouter error: {body['error']}")
+        raise RuntimeError(f"{active.display_name} error: {body['error']}")
     choice = (body.get("choices") or [{}])[0]
     content = (choice.get("message") or {}).get("content")
     summary = str(content or "").strip()
     if not summary:
-        raise RuntimeError("OpenRouter returned an empty compaction summary")
+        raise RuntimeError(f"{active.display_name} returned an empty compaction summary")
     usage = body.get("usage") if isinstance(body.get("usage"), dict) else {}
     return summary, usage
 
@@ -341,6 +346,7 @@ def generate_conversation_title(conversation: List[Dict[str, Any]]) -> str:
     This intentionally uses a separate tool-free request and never sends the
     full conversation or tool output to the provider.
     """
+    active = backend_config()
     excerpt: List[str] = []
     for message in conversation:
         role = message.get("role")
@@ -352,8 +358,8 @@ def generate_conversation_title(conversation: List[Dict[str, Any]]) -> str:
     prompt = "\n".join(excerpt)[-TITLE_MAX_INPUT_CHARS:]
     if not prompt:
         return "New conversation"
-    payload = json.dumps({
-        "model": get_model(),
+    payload_data: Dict[str, Any] = {
+        "model": active.model,
         "messages": [
             {"role": "system", "content": (
                 "Give this coding conversation a concise title of 2-6 words. "
@@ -365,14 +371,17 @@ def generate_conversation_title(conversation: List[Dict[str, Any]]) -> str:
         "tool_choice": "none",
         "max_tokens": TITLE_MAX_OUTPUT_TOKENS,
         "stream": False,
-    }).encode()
+    }
+    if active.reasoning_effort is not None:
+        payload_data["reasoning_effort"] = active.reasoning_effort
+    payload = json.dumps(payload_data).encode()
     request = urllib.request.Request(
-        OPENROUTER_CHAT_URL, data=payload, method="POST", headers=_headers()
+        active.chat_url, data=payload, method="POST", headers=active.headers()
     )
-    with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_S) as response:
+    with urllib.request.urlopen(request, timeout=active.timeout_s) as response:
         body = json.loads(response.read().decode("utf-8"))
     if body.get("error"):
-        raise RuntimeError(f"OpenRouter error: {body['error']}")
+        raise RuntimeError(f"{active.display_name} error: {body['error']}")
     content = ((body.get("choices") or [{}])[0].get("message") or {}).get("content")
     title = " ".join(str(content or "").split()).strip(" .:-")
     return title[:60] or "New conversation"
