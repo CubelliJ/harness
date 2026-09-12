@@ -27,6 +27,7 @@ ConfirmEdit = Callable[[Dict[str, Any]], tuple[bool, str]]
 ConfirmMode = Callable[[str], bool]
 ModeChanged = Callable[[SessionMode], None]
 UpdateTokens = Callable[[Optional[int]], None]
+ContextCheckpoint = Callable[[], bool]
 GenerateTitle = Callable[[], None]
 
 
@@ -80,6 +81,7 @@ def run_turn(
     confirm_edit: ConfirmEdit,
     interruptible_call: InterruptibleCall,
     update_tokens: UpdateTokens,
+    context_checkpoint: Optional[ContextCheckpoint] = None,
     confirm_mode: Optional[ConfirmMode] = None,
     mode_state: Optional[ModeState] = None,
     mode_changed: Optional[ModeChanged] = None,
@@ -129,9 +131,12 @@ def run_turn(
         if not tool_calls:
             conversation.append(assistant_message(content, usage=usage))
             persist()
-            maybe_generate_title()
+            nudged = context_checkpoint() if context_checkpoint is not None else False
             if content and not streamed_text:
                 print(f"{ASSISTANT_PREFIX}{render_markdown(content)}")
+            if nudged:
+                continue
+            maybe_generate_title()
             return
 
         if content and not streamed_text:

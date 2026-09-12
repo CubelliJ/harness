@@ -64,6 +64,67 @@ from harness.cli.voice_ui import pause_voice_session, voice_loop
 
 logger = logging.getLogger(__name__)
 
+CONTEXT_NUDGE_THRESHOLDS = (0.2, 0.4, 0.6, 0.8)
+CONTEXT_NUDGE_TEXT = {
+    0.2: (
+        "Context usage has reached 20% of the model budget. Pause at the end of the "
+        "current phase and assess whether older details are still needed. If that phase "
+        "is complete, proactively call compact_conversation to avoid paying to repeat "
+        "irrelevant history. Compaction is optional, not the objective, and must not "
+        "interrupt an unfinished tool exchange."
+    ),
+    0.4: (
+        "Context usage has reached 40% of the model budget. Continuing to carry completed "
+        "or repetitive history increases input-token cost on every request. Before doing "
+        "more work, check whether the current phase is complete; if older details are not "
+        "needed for the next step, proactively call compact_conversation. Do not compact "
+        "during an unfinished tool exchange."
+    ),
+    0.6: (
+        "Context usage has reached 60% of the model budget. Treat retaining irrelevant "
+        "history as a cost that compounds with every provider request. Unless the next "
+        "step genuinely depends on the older transcript, call compact_conversation now "
+        "after completing the current phase. Compaction is a means to reduce repeated "
+        "input, not the objective, and must not interrupt an unfinished tool exchange."
+    ),
+    0.8: (
+        "Context usage has reached 80% of the model budget. Do not continue broad "
+        "exploration while carrying history that is no longer essential. Complete the "
+        "current phase, then proactively call compact_conversation before the next phase "
+        "to avoid expensive repeated input. Only skip it when the older context is "
+        "genuinely required; never compact during an unfinished tool exchange."
+    ),
+}
+
+
+def append_context_budget_nudges(
+    conversation: list[dict],
+    prompt_tokens: Optional[int],
+    context_limit: Optional[int],
+    sent_thresholds: set[float],
+) -> bool:
+    """Append persisted cost-awareness guidance for newly crossed thresholds."""
+    if (
+        not isinstance(prompt_tokens, int)
+        or isinstance(prompt_tokens, bool)
+        or prompt_tokens < 0
+        or not isinstance(context_limit, int)
+        or isinstance(context_limit, bool)
+        or context_limit < 1
+    ):
+        return False
+    added = False
+    for threshold in CONTEXT_NUDGE_THRESHOLDS:
+        if threshold in sent_thresholds or prompt_tokens < context_limit * threshold:
+            continue
+        message = system_message(CONTEXT_NUDGE_TEXT[threshold])
+        message["context_budget_nudge"] = threshold
+        conversation.append(message)
+        sent_thresholds.add(threshold)
+        added = True
+    return added
+
+
 def run_repl(initial_request: str = "", reload: bool = False) -> None:
     """Run the REPL, optionally resuming the persisted conversation."""
     _banner()
@@ -87,6 +148,11 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
             session_title = selected.get("title") if selected else None
     conversation = load_conversation_state(state_path) if reload else None
     resumed = conversation is not None
+    sent_context_nudges = {
+        message.get("context_budget_nudge")
+        for message in (conversation or [])
+        if isinstance(message.get("context_budget_nudge"), float)
+    }
     if conversation is not None:
         # Older interrupted sessions may contain an assistant tool call with
         # no result. Repair that state before the first resumed provider call.
@@ -153,7 +219,7 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
         print(handovers[-1].split("\n", 1)[-1])
 
     def compact(force: bool = False) -> bool:
-        nonlocal context_tokens
+        nonlocal context_tokens, sent_context_nudges
         changed = compact_conversation(
             conversation,
             compaction_budget(),
@@ -163,11 +229,13 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
         )
         if changed:
             context_tokens = None
+            sent_context_nudges = set()
             persist()
         return changed
 
     def clear_conversation() -> None:
         nonlocal history_path, state_path, session_title, title_generated, session_registered
+        sent_context_nudges.clear()
         conversation[:] = [
             system_message(get_full_system_prompt(workspace)),
             system_message("[New conversation started. Treat the next request as a fresh task.]"),
@@ -225,6 +293,15 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
             if interrupted:
                 persist()
 
+    def _context_checkpoint() -> bool:
+        added = append_context_budget_nudges(
+            conversation, context_tokens, context_limit, sent_context_nudges,
+        )
+        if added:
+            _print_context(context_tokens, context_limit)
+        persist()
+        return added
+
     def _process_turn(user_input: str) -> None:
         compact()
         persist()
@@ -249,6 +326,7 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
             mode_state=mode_state,
             interruptible_call=_interruptible_call,
             update_tokens=_update_context_tokens,
+            context_checkpoint=_context_checkpoint,
         )
 
     def _update_context_tokens(prompt_tokens: Optional[int]) -> None:

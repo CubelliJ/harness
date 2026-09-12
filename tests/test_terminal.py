@@ -3,7 +3,12 @@ import unittest
 from contextlib import redirect_stdout
 from unittest.mock import patch
 
-from harness.main import _append_interrupted_tool_results, _context_bar, _select_model
+from harness.main import (
+    _append_interrupted_tool_results,
+    _context_bar,
+    _print_context,
+    _select_model,
+)
 from harness.terminal import MarkdownStreamRenderer, render_markdown
 
 
@@ -99,6 +104,15 @@ class ContextBarTests(unittest.TestCase):
 
     def test_context_bar_handles_unknown_limit(self):
         self.assertEqual(_context_bar(25, None), "[25 tokens; limit unknown]")
+
+    def test_print_context_uses_gray_context_status(self):
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            _print_context(43_629, 1_050_000)
+        output = buffer.getvalue()
+        self.assertIn("context 43,629 / 1,050,000 tokens", output)
+        self.assertIn("[#.............................] 4%", output)
+        self.assertTrue(output.startswith("\033[90m"))
 
 
 class MarkdownStreamTests(unittest.TestCase):

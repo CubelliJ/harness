@@ -4,6 +4,39 @@ from contextlib import redirect_stdout
 
 from harness.cli.agent_loop import _append_interrupted_tool_results, run_turn
 from harness.cli.mode import ModeState, SessionMode
+from harness.cli.repl import append_context_budget_nudges
+from harness.conversation import system_message
+
+
+class ContextBudgetNudgeTestCase(unittest.TestCase):
+    def test_nudges_are_added_once_at_each_provider_usage_threshold(self):
+        conversation = [{"role": "system", "content": "system"}]
+        sent = set()
+
+        append_context_budget_nudges(conversation, 39_999, 200_000, sent)
+        self.assertEqual(len(conversation), 1)
+        append_context_budget_nudges(conversation, 160_000, 200_000, sent)
+        self.assertEqual(
+            [message["context_budget_nudge"] for message in conversation[1:]],
+            [0.2, 0.4, 0.6, 0.8],
+        )
+        append_context_budget_nudges(conversation, 200_000, 200_000, sent)
+        self.assertEqual(len(conversation), 5)
+
+    def test_nudges_ignore_missing_or_invalid_provider_usage(self):
+        conversation = [{"role": "system", "content": "system"}]
+        sent = set()
+        for prompt_tokens in (None, -1, True, "40000"):
+            append_context_budget_nudges(conversation, prompt_tokens, 200_000, sent)
+        self.assertEqual(len(conversation), 1)
+
+    def test_nudges_explain_compaction_is_optional_and_costly_history(self):
+        conversation = [{"role": "system", "content": "system"}]
+        append_context_budget_nudges(conversation, 120_000, 200_000, set())
+        content = "\n".join(message["content"] for message in conversation[1:])
+        self.assertIn("optional", content)
+        self.assertIn("input-token cost", content)
+        self.assertIn("not the objective", content)
 
 
 class AgentLoopTestCase(unittest.TestCase):
@@ -21,7 +54,7 @@ class AgentLoopTestCase(unittest.TestCase):
         self.persisted += 1
 
     def _run(self, responses, *, tool_results=None, confirm_command=None,
-             confirm_edit=None, auto_approve=False):
+             confirm_edit=None, auto_approve=False, context_checkpoint=None):
         calls = iter(responses)
         tool_results = tool_results or {}
 
@@ -43,8 +76,66 @@ class AgentLoopTestCase(unittest.TestCase):
                 confirm_edit=confirm_edit or (lambda result: (True, "")),
                 interruptible_call=interruptible,
                 update_tokens=self.tokens.append,
+                context_checkpoint=context_checkpoint,
             )
         return output.getvalue()
+
+    def test_context_checkpoint_runs_after_completed_response(self):
+        checkpoints = []
+        self._run(
+            [("Hello", [], {"prompt_tokens": 120_000})],
+            context_checkpoint=lambda: checkpoints.append("completed"),
+        )
+        self.assertEqual(checkpoints, ["completed"])
+
+    def test_context_checkpoint_waits_until_tool_exchange_is_complete(self):
+        checkpoints = []
+        checkpoint_roles = []
+
+        def checkpoint():
+            checkpoints.append("completed")
+            checkpoint_roles.extend(message["role"] for message in self.conversation)
+
+        self._run(
+            [(None, [{"id": "call-1", "function": {"name": "read_file", "arguments": "{}"}}],
+              {"prompt_tokens": 120_000}), ("Done", [], {"prompt_tokens": 130_000})],
+            tool_results={"read_file": {"content": "ok"}},
+            context_checkpoint=checkpoint,
+        )
+        self.assertEqual(checkpoints, ["completed"])
+        self.assertEqual(checkpoint_roles, ["system", "assistant", "tool", "assistant"])
+
+    def test_new_context_nudge_triggers_follow_up_provider_call(self):
+        provider_messages = []
+        responses = iter([
+            ("First answer", [], {"prompt_tokens": 120}),
+            ("Nudge acknowledged", [], {"prompt_tokens": 130}),
+        ])
+
+        def interruptible(function, *args, **kwargs):
+            if function.__name__ != "execute_llm_call":
+                raise AssertionError("no tool call expected")
+            provider_messages.append([message.copy() for message in self.conversation])
+            return next(responses)
+
+        with redirect_stdout(io.StringIO()):
+            run_turn(
+                self.conversation,
+                session_auto_approve=False,
+                compact=lambda: False,
+                persist=lambda: None,
+                maybe_generate_title=lambda: None,
+                confirm_command=lambda _: (True, ""),
+                confirm_edit=lambda _: (True, ""),
+                interruptible_call=interruptible,
+                update_tokens=lambda _: None,
+                context_checkpoint=lambda: (
+                    self.conversation.append(system_message("budget nudge"))
+                    or True
+                ) if len(provider_messages) == 1 else False,
+            )
+        self.assertEqual(len(provider_messages), 2)
+        self.assertEqual(provider_messages[1][-1]["role"], "system")
 
     def test_plain_response_updates_conversation_and_usage(self):
         output = self._run([("Hello", [], {"prompt_tokens": 12})])
