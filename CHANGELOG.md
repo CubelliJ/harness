@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.35.0](https://github.com/CubelliJ/harness/compare/v0.34.0...v0.35.0) (2026-09-12)
+
+
+### Features
+
+* add progressive context budget nudges ([f8238cc](https://github.com/CubelliJ/harness/commit/f8238cc77247ba07cf8de0de11ff4ee8fdd60110))
+* continue after context budget nudges ([2197e7d](https://github.com/CubelliJ/harness/commit/2197e7d1d83c65f4cbd362820e9c2b55ecc965ef))
+* continue after context budget nudges ([11677f9](https://github.com/CubelliJ/harness/commit/11677f9a7a88e580f0ec3792cad7d2e50e46f289))
+* strengthen compaction nudges ([95e031e](https://github.com/CubelliJ/harness/commit/95e031ebec1ec0674eb27e2f88ab09789f09d756))
+
 ## [0.34.0](https://github.com/CubelliJ/harness/compare/v0.33.1...v0.34.0) (2026-09-09)
 
 
