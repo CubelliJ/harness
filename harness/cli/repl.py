@@ -102,7 +102,7 @@ def append_context_budget_nudges(
     prompt_tokens: Optional[int],
     context_limit: Optional[int],
     sent_thresholds: set[float],
-) -> None:
+) -> bool:
     """Append persisted cost-awareness guidance for newly crossed thresholds."""
     if (
         not isinstance(prompt_tokens, int)
@@ -112,7 +112,8 @@ def append_context_budget_nudges(
         or isinstance(context_limit, bool)
         or context_limit < 1
     ):
-        return
+        return False
+    added = False
     for threshold in CONTEXT_NUDGE_THRESHOLDS:
         if threshold in sent_thresholds or prompt_tokens < context_limit * threshold:
             continue
@@ -120,6 +121,8 @@ def append_context_budget_nudges(
         message["context_budget_nudge"] = threshold
         conversation.append(message)
         sent_thresholds.add(threshold)
+        added = True
+    return added
 
 
 def run_repl(initial_request: str = "", reload: bool = False) -> None:
@@ -217,9 +220,6 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
 
     def compact(force: bool = False) -> bool:
         nonlocal context_tokens, sent_context_nudges
-        append_context_budget_nudges(
-            conversation, context_tokens, context_limit, sent_context_nudges,
-        )
         changed = compact_conversation(
             conversation,
             compaction_budget(),
@@ -293,6 +293,15 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
             if interrupted:
                 persist()
 
+    def _context_checkpoint() -> bool:
+        added = append_context_budget_nudges(
+            conversation, context_tokens, context_limit, sent_context_nudges,
+        )
+        if added:
+            _print_context(context_tokens, context_limit)
+        persist()
+        return added
+
     def _process_turn(user_input: str) -> None:
         compact()
         persist()
@@ -317,6 +326,7 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
             mode_state=mode_state,
             interruptible_call=_interruptible_call,
             update_tokens=_update_context_tokens,
+            context_checkpoint=_context_checkpoint,
         )
 
     def _update_context_tokens(prompt_tokens: Optional[int]) -> None:
