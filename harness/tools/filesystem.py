@@ -3,7 +3,6 @@
 import base64
 import difflib
 import fnmatch
-import mimetypes
 import hashlib
 import os
 import stat
@@ -11,7 +10,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import harness.tools as tools
 
@@ -84,21 +83,41 @@ def read_file(
     }
 
 
+def _image_mime_type(data: bytes) -> Optional[str]:
+    """Return the provider-supported MIME type matching valid image data."""
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png" if len(data) >= 24 and data[12:16] == b"IHDR" else None
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg" if b"\xff\xd9" in data[3:] else None
+    if data.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif" if len(data) >= 14 and data.endswith(b"\x3b") else None
+    if len(data) >= 16 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
 def read_image(filename: str) -> Dict[str, Any]:
-    """Read a workspace image and return an inline provider data URL."""
+    """Read a valid workspace image and return an inline provider data URL."""
     try:
         full_path = resolve_abs_path(filename)
     except ValueError as exc:
         return {"error": str(exc)}
     if not full_path.is_file():
         return {"error": f"File not found: {full_path}"}
-    mime = mimetypes.guess_type(full_path.name)[0]
-    if not mime or not mime.startswith("image/"):
-        return {"error": f"Unsupported image type: {full_path.suffix or full_path.name}"}
     try:
-        encoded = base64.b64encode(full_path.read_bytes()).decode("ascii")
+        data = full_path.read_bytes()
     except OSError as exc:
         return {"error": f"Could not read image: {exc}"}
+
+    mime = _image_mime_type(data)
+    if mime is None:
+        return {
+            "error": (
+                "Invalid or unsupported image data. Expected a valid JPEG, PNG, "
+                "GIF, or WebP image."
+            )
+        }
+    encoded = base64.b64encode(data).decode("ascii")
     return {
         "file_path": str(full_path),
         "mime_type": mime,
