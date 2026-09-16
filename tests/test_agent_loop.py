@@ -2,7 +2,11 @@ import io
 import unittest
 from contextlib import redirect_stdout
 
-from harness.cli.agent_loop import _append_interrupted_tool_results, run_turn
+from harness.cli.agent_loop import (
+    _append_interrupted_tool_results,
+    _tool_output_preview,
+    run_turn,
+)
 from harness.cli.mode import ModeState, SessionMode
 from harness.cli.repl import append_context_budget_nudges
 from harness.conversation import system_message
@@ -37,6 +41,21 @@ class ContextBudgetNudgeTestCase(unittest.TestCase):
         self.assertIn("optional", content)
         self.assertIn("input-token cost", content)
         self.assertIn("not the objective", content)
+
+
+class ToolOutputPreviewTestCase(unittest.TestCase):
+    def test_preview_shows_only_last_two_lines_for_shell_and_git_tools(self):
+        result = {"stdout": "one\ntwo\nthree\n", "stderr": "warning\n"}
+        preview = _tool_output_preview("run_command", result)
+        self.assertIn("three", preview)
+        self.assertIn("warning", preview)
+        self.assertNotIn("one", preview)
+        self.assertNotIn("two", preview)
+
+    def test_preview_does_not_change_or_expose_other_tool_results(self):
+        result = {"stdout": "one\ntwo\nthree\n", "content": "full content"}
+        self.assertEqual(_tool_output_preview("read_file", result), "")
+        self.assertEqual(result["stdout"], "one\ntwo\nthree\n")
 
 
 class AgentLoopTestCase(unittest.TestCase):
