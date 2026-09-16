@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.35.1](https://github.com/CubelliJ/harness/compare/v0.35.0...v0.35.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* validate image data before attachment ([da9e6e0](https://github.com/CubelliJ/harness/commit/da9e6e0b39af1804fc5eea327da362c04506a3dd))
+* validate image data before attachment ([78a0f24](https://github.com/CubelliJ/harness/commit/78a0f24e2780329fed06a75357d17bc79557d893))
+
 ## [0.35.0](https://github.com/CubelliJ/harness/compare/v0.34.0...v0.35.0) (2026-09-12)
 
 
