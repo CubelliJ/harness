@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.36.0](https://github.com/CubelliJ/harness/compare/v0.35.1...v0.36.0) (2026-09-16)
+
+
+### Features
+
+* show recent shell and git output ([9c5e2c7](https://github.com/CubelliJ/harness/commit/9c5e2c752363677b6e73090a0a58d1b6c2524011))
+* show recent shell and git output ([1db4cbb](https://github.com/CubelliJ/harness/commit/1db4cbb7a0cf5571694fc313b5ec488fa52eef13))
+
 ## [0.35.1](https://github.com/CubelliJ/harness/compare/v0.35.0...v0.35.1) (2026-09-16)
 
 
