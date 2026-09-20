@@ -11,6 +11,7 @@ from harness.llm import (
     generate_conversation_title,
     get_available_models,
     model_context_length,
+    model_pricing,
     parse_tool_call,
     summarize_conversation,
 )
@@ -167,6 +168,51 @@ class LlmTestCase(unittest.TestCase):
         body = {"data": [{"id": "model-a", "context_length": 128000}]}
         self.assertEqual(model_context_length(body, "model-a"), 128000)
         self.assertIsNone(model_context_length(body, "missing"))
+
+    def test_model_pricing_converts_catalogue_rates(self):
+        body = {"data": [{
+            "id": "model-a",
+            "pricing": {
+                "prompt": "0.000001",
+                "completion": "0.000002",
+                "input_cache_read": "0.0000001",
+            },
+        }]}
+        pricing = model_pricing(body, "model-a")
+        self.assertAlmostEqual(pricing["input_cost_per_million"], 1.0)
+        self.assertAlmostEqual(pricing["output_cost_per_million"], 2.0)
+        self.assertAlmostEqual(pricing["cache_read_cost_per_million"], 0.1)
+
+    def test_model_pricing_selects_prompt_threshold_override(self):
+        body = {"data": [{
+            "id": "model-a",
+            "pricing": {
+                "prompt": "0.000001",
+                "completion": "0.000002",
+                "overrides": [
+                    {"min_prompt_tokens": 1000, "prompt": "0.000003", "completion": "0.000004"},
+                    {"min_prompt_tokens": 5000, "prompt": "0.000005", "completion": "0.000006"},
+                ],
+            },
+        }]}
+        base = model_pricing(body, "model-a", prompt_tokens=999)
+        override = model_pricing(body, "model-a", prompt_tokens=5000)
+        self.assertAlmostEqual(base["input_cost_per_million"], 1.0)
+        self.assertAlmostEqual(override["input_cost_per_million"], 5.0)
+        self.assertAlmostEqual(override["output_cost_per_million"], 6.0)
+
+    def test_model_pricing_accepts_explicit_per_million_fields(self):
+        body = {"data": [{
+            "id": "model-a",
+            "pricing": {
+                "input_cost_per_million": 1.5,
+                "output_cost_per_million": 8,
+            },
+        }]}
+        self.assertEqual(model_pricing(body, "model-a"), {
+            "input_cost_per_million": 1.5,
+            "output_cost_per_million": 8.0,
+        })
 
     @patch("harness.llm._models_response")
     def test_available_models_filters_and_sorts(self, response):

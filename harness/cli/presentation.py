@@ -16,7 +16,7 @@ from harness.conversation import (
     usage_cost_fields,
 )
 from harness.config import CONTEXT_COMPACTION_CAP, CONTEXT_COMPACTION_RATIO
-from harness.llm import filter_models, get_available_models
+from harness.llm import filter_models, get_available_models, get_model_pricing
 
 logger = logging.getLogger(__name__)
 
@@ -63,13 +63,30 @@ def _print_context(prompt_tokens: Optional[int], context_limit: Optional[int]) -
     print(f"\033[90m▸ context {usage} / {limit} tokens \033[36m{bar}\033[0m")
 
 
-def _pricing_kwargs() -> Dict[str, Optional[float]]:
+def _pricing_kwargs(prompt_tokens: Optional[int] = None) -> Dict[str, Optional[float]]:
     active = config.backend_config()
+    discovered = get_model_pricing(prompt_tokens)
     return {
-        "input_cost_per_million": active.input_cost_per_million,
-        "cache_read_cost_per_million": active.cache_read_cost_per_million,
-        "cache_write_cost_per_million": active.cache_write_cost_per_million,
-        "output_cost_per_million": active.output_cost_per_million,
+        "input_cost_per_million": (
+            active.input_cost_per_million
+            if active.input_cost_per_million is not None
+            else discovered.get("input_cost_per_million")
+        ),
+        "cache_read_cost_per_million": (
+            active.cache_read_cost_per_million
+            if active.cache_read_cost_per_million is not None
+            else discovered.get("cache_read_cost_per_million")
+        ),
+        "cache_write_cost_per_million": (
+            active.cache_write_cost_per_million
+            if active.cache_write_cost_per_million is not None
+            else discovered.get("cache_write_cost_per_million")
+        ),
+        "output_cost_per_million": (
+            active.output_cost_per_million
+            if active.output_cost_per_million is not None
+            else discovered.get("output_cost_per_million")
+        ),
     }
 
 
@@ -90,7 +107,10 @@ def _print_cost(conversation: list[Dict[str, Any]], last: bool = False) -> None:
               f"{_format_tokens(fields['reasoning_tokens'])} reasoning · "
               f"{_format_tokens(fields['total_tokens'])} total\033[0m")
         provider_breakdown = usage_cost_breakdown(usage)
-        estimated_breakdown = estimated_usage_cost(usage, **_pricing_kwargs())
+        estimated_breakdown = estimated_usage_cost(
+            usage,
+            **_pricing_kwargs(usage_cost_fields(usage)["input_tokens"]),
+        )
         breakdown = {
             key: provider_breakdown[key] if provider_breakdown[key] is not None else estimated_breakdown[key]
             for key in provider_breakdown

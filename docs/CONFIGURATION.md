@@ -51,3 +51,9 @@ python -m harness configure
 | `HARNESS_NO_COLOR` | — | Disable terminal colors |
 | `HARNESS_COLOR` | — | Force terminal colors |
 | `HARNESS_STT_BIN` | `~/.harness/bin/harness-stt.app` | Speech helper path |
+
+When local rates are unset, Harness reads pricing from the selected model's
+provider metadata. For OpenRouter, threshold-based pricing overrides are
+applied to `/cost last` using that call's prompt-token count. Historical
+conversation totals use the base catalogue rates because older usage records do
+not retain a pricing snapshot.
