@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from harness import config, get_version
-from harness.conversation import YOU_PROMPT, conversation_cost, usage_cost_fields
+from harness.conversation import YOU_PROMPT, conversation_cost, usage_cost_breakdown, usage_cost_fields
 from harness.config import CONTEXT_COMPACTION_CAP, CONTEXT_COMPACTION_RATIO
 from harness.llm import filter_models, get_available_models
 
@@ -19,6 +19,23 @@ def _format_tokens(value: Any) -> str:
         return f"{int(value):,}"
     except (TypeError, ValueError):
         return "?"
+
+
+def _format_cost(value: Any) -> str:
+    try:
+        return f"${float(value):.6f}" if value is not None else "unknown"
+    except (TypeError, ValueError):
+        return "unknown"
+
+
+def _cost_breakdown_text(breakdown: Dict[str, Any]) -> str:
+    return (
+        f"input {_format_cost(breakdown.get('input_cost'))} / "
+        f"cache read {_format_cost(breakdown.get('cache_read_cost'))} / "
+        f"cache write {_format_cost(breakdown.get('cache_write_cost'))} / "
+        f"output {_format_cost(breakdown.get('output_cost'))} / "
+        f"reasoning {_format_cost(breakdown.get('reasoning_cost'))}"
+    )
 
 
 def _context_bar(prompt_tokens: Optional[int], context_limit: Optional[int], width: int = 30) -> str:
@@ -48,11 +65,7 @@ def _print_cost(conversation: list[Dict[str, Any]], last: bool = False) -> None:
     if last:
         usage = summary["last_usage"] or {}
         fields = usage_cost_fields(usage)
-        cost = usage.get("cost")
-        try:
-            cost_text = f"${float(cost):.6f}" if cost is not None else "unknown"
-        except (TypeError, ValueError):
-            cost_text = "unknown"
+        cost_text = _format_cost(usage.get("cost"))
         print(f"\033[90m▸ last call: {cost_text} · "
               f"{_format_tokens(fields['input_tokens'])} input "
               f"({_format_tokens(fields['cache_read_input_tokens'])} cache read / "
@@ -60,9 +73,10 @@ def _print_cost(conversation: list[Dict[str, Any]], last: bool = False) -> None:
               f"{_format_tokens(fields['output_tokens'])} output · "
               f"{_format_tokens(fields['reasoning_tokens'])} reasoning · "
               f"{_format_tokens(fields['total_tokens'])} total\033[0m")
+        print(f"\033[90m  cost breakdown: {_cost_breakdown_text(usage_cost_breakdown(usage))}\033[0m")
         return
     cost = summary["cost"]
-    cost_text = f"${cost:.6f}" if cost is not None else "unknown"
+    cost_text = _format_cost(cost)
     print(f"\033[90m▸ conversation: {cost_text} · {summary['calls']} calls · "
           f"{_format_tokens(summary['input_tokens'])} input "
           f"({_format_tokens(summary['cache_read_input_tokens'])} cache read / "
@@ -70,6 +84,7 @@ def _print_cost(conversation: list[Dict[str, Any]], last: bool = False) -> None:
           f"{_format_tokens(summary['output_tokens'])} output · "
           f"{_format_tokens(summary['reasoning_tokens'])} reasoning · "
           f"{_format_tokens(summary['total_tokens'])} total\033[0m")
+    print(f"\033[90m  cost breakdown: {_cost_breakdown_text(summary['cost_breakdown'])}\033[0m")
 
 
 def _format_model_context(model: Dict[str, Any]) -> str:

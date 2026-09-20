@@ -17,6 +17,7 @@ from harness.conversation import (
     compact_conversation,
     estimate_tokens,
     tool_message,
+    usage_cost_breakdown,
     usage_cost_fields,
     user_message,
 )
@@ -70,6 +71,59 @@ class ConversationTestCase(unittest.TestCase):
             "reasoning_tokens": 7,
             "total_tokens": 120,
         })
+
+    def test_usage_cost_breakdown_reads_provider_category_costs(self):
+        breakdown = usage_cost_breakdown({
+            "cost": 0.01,
+            "cost_details": {
+                "input_cost": 0.001,
+                "cache_read_cost": 0.002,
+                "cache_write_cost": 0.003,
+                "output_cost": 0.004,
+                "reasoning_cost": 0.0005,
+            },
+        })
+        self.assertEqual(breakdown, {
+            "input_cost": 0.001,
+            "cache_read_cost": 0.002,
+            "cache_write_cost": 0.003,
+            "output_cost": 0.004,
+            "reasoning_cost": 0.0005,
+        })
+
+    def test_conversation_cost_aggregates_category_costs_and_unknowns(self):
+        conversation = [
+            assistant_message("one", usage={
+                "cost": 0.01,
+                "cost_details": {
+                    "input_cost": 0.001,
+                    "cache_read_cost": 0.002,
+                    "cache_write_cost": 0.003,
+                    "output_cost": 0.004,
+                    "reasoning_cost": 0.0005,
+                },
+            }),
+            assistant_message("two", usage={
+                "cost": 0.02,
+                "cost_details": {
+                    "input_cost": 0.01,
+                    "cache_read_cost": 0.01,
+                    "cache_write_cost": 0.01,
+                    "output_cost": 0.01,
+                    "reasoning_cost": 0.01,
+                },
+            }),
+        ]
+        summary = conversation_cost(conversation)
+        self.assertAlmostEqual(summary["cost_breakdown"]["input_cost"], 0.011)
+        self.assertAlmostEqual(summary["cost_breakdown"]["cache_read_cost"], 0.012)
+        self.assertAlmostEqual(summary["cost_breakdown"]["cache_write_cost"], 0.013)
+        self.assertAlmostEqual(summary["cost_breakdown"]["output_cost"], 0.014)
+        self.assertAlmostEqual(summary["cost_breakdown"]["reasoning_cost"], 0.0105)
+        self.assertEqual(
+            conversation_cost([assistant_message("two", usage={"cost": 0.02})])["cost_breakdown"],
+            {key: None for key in summary["cost_breakdown"]},
+        )
 
     def test_conversation_cost_includes_detailed_token_categories(self):
         conversation = [
