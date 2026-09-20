@@ -170,13 +170,66 @@ def _usage_number(usage: Dict[str, Any], key: str) -> int:
     return number if number >= 0 else 0
 
 
+def _first_usage_number(usage: Dict[str, Any], *keys: str) -> int:
+    """Read the first present non-negative numeric usage field."""
+    for key in keys:
+        if key in usage:
+            return _usage_number(usage, key)
+    return 0
+
+
+def usage_cost_fields(usage: Dict[str, Any]) -> Dict[str, int]:
+    """Normalize common provider token fields for cost accounting.
+
+    OpenAI-compatible gateways commonly report ``prompt_tokens`` and nested
+    ``prompt_tokens_details.cached_tokens``. Anthropic-compatible gateways may
+    instead report ``input_tokens``, ``cache_read_input_tokens`` and
+    ``cache_creation_input_tokens``. Keep the original usage object intact, but
+    expose a stable accounting vocabulary for summaries and future pricing.
+    """
+    prompt_details = usage.get("prompt_tokens_details")
+    prompt_details = prompt_details if isinstance(prompt_details, dict) else {}
+    completion_details = usage.get("completion_tokens_details")
+    completion_details = completion_details if isinstance(completion_details, dict) else {}
+    input_tokens = _first_usage_number(usage, "prompt_tokens", "input_tokens")
+    cache_read = _first_usage_number(
+        usage, "cache_read_input_tokens", "cached_input_tokens", "cache_read_tokens",
+    )
+    if not cache_read:
+        cache_read = _first_usage_number(prompt_details, "cached_tokens", "cache_read_input_tokens")
+    cache_write = _first_usage_number(
+        usage, "cache_creation_input_tokens", "cache_write_input_tokens", "cache_write_tokens",
+    )
+    if not cache_write:
+        cache_write = _first_usage_number(prompt_details, "cache_write_tokens", "cache_creation_input_tokens")
+    output_tokens = _first_usage_number(usage, "completion_tokens", "output_tokens")
+    reasoning_tokens = _first_usage_number(
+        usage, "reasoning_tokens", "reasoning_output_tokens",
+    )
+    if not reasoning_tokens:
+        reasoning_tokens = _first_usage_number(completion_details, "reasoning_tokens")
+    total_tokens = _first_usage_number(usage, "total_tokens")
+    return {
+        "input_tokens": input_tokens,
+        "cache_read_input_tokens": cache_read,
+        "cache_write_input_tokens": cache_write,
+        "output_tokens": output_tokens,
+        "reasoning_tokens": reasoning_tokens,
+        "total_tokens": total_tokens,
+    }
+
+
 def conversation_cost(conversation: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
-    """Aggregate provider-reported usage retained on assistant messages."""
+    """Aggregate detailed provider-reported usage retained on the conversation."""
     calls = 0
-    prompt_tokens = 0
-    completion_tokens = 0
-    cached_input_tokens = 0
-    total_tokens = 0
+    fields = {
+        "input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 0,
+        "reasoning_tokens": 0,
+        "total_tokens": 0,
+    }
     cost = 0.0
     cost_known = True
     last: Optional[Dict[str, Any]] = None
@@ -185,12 +238,9 @@ def conversation_cost(conversation: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         if not isinstance(usage, dict):
             continue
         calls += 1
-        prompt_tokens += _usage_number(usage, "prompt_tokens")
-        completion_tokens += _usage_number(usage, "completion_tokens")
-        prompt_details = usage.get("prompt_tokens_details")
-        if isinstance(prompt_details, dict):
-            cached_input_tokens += _usage_number(prompt_details, "cached_tokens")
-        total_tokens += _usage_number(usage, "total_tokens")
+        normalized = usage_cost_fields(usage)
+        for key in fields:
+            fields[key] += normalized[key]
         raw_cost = usage.get("cost")
         try:
             if raw_cost is None:
@@ -199,12 +249,13 @@ def conversation_cost(conversation: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         except (TypeError, ValueError):
             cost_known = False
         last = usage
+    # Preserve historical keys while making the detailed names canonical.
     return {
         "calls": calls,
-        "prompt_tokens": prompt_tokens,
-        "completion_tokens": completion_tokens,
-        "cached_input_tokens": cached_input_tokens,
-        "total_tokens": total_tokens,
+        "prompt_tokens": fields["input_tokens"],
+        "completion_tokens": fields["output_tokens"],
+        "cached_input_tokens": fields["cache_read_input_tokens"],
+        **fields,
         "cost": cost if cost_known else None,
         "last_usage": last,
     }

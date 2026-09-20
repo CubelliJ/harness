@@ -61,9 +61,12 @@ def _print_cost(conversation: list[Dict[str, Any]], last: bool = False) -> None:
     cost = summary["cost"]
     cost_text = f"${cost:.6f}" if cost is not None else "unknown"
     print(f"\033[90m▸ conversation: {cost_text} · {summary['calls']} calls · "
-          f"{_format_tokens(summary['prompt_tokens'])} in / "
-          f"{_format_tokens(summary['completion_tokens'])} out · "
-          f"{_format_tokens(summary['cached_input_tokens'])} cached\033[0m")
+          f"{_format_tokens(summary['input_tokens'])} input "
+          f"({_format_tokens(summary['cache_read_input_tokens'])} cache read / "
+          f"{_format_tokens(summary['cache_write_input_tokens'])} cache write) · "
+          f"{_format_tokens(summary['output_tokens'])} output · "
+          f"{_format_tokens(summary['reasoning_tokens'])} reasoning · "
+          f"{_format_tokens(summary['total_tokens'])} total\033[0m")
 
 
 def _format_model_context(model: Dict[str, Any]) -> str:

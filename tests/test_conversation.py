@@ -17,6 +17,7 @@ from harness.conversation import (
     compact_conversation,
     estimate_tokens,
     tool_message,
+    usage_cost_fields,
     user_message,
 )
 
@@ -51,6 +52,51 @@ class ConversationTestCase(unittest.TestCase):
         self.assertEqual(summary["total_tokens"], 40)
         self.assertAlmostEqual(summary["cost"], 0.003)
         self.assertEqual(summary["last_usage"]["cost"], 0.002)
+
+    def test_usage_cost_fields_normalizes_cache_read_write_and_reasoning(self):
+        fields = usage_cost_fields({
+            "input_tokens": 100,
+            "cache_read_input_tokens": 40,
+            "cache_creation_input_tokens": 12,
+            "output_tokens": 20,
+            "reasoning_output_tokens": 7,
+            "total_tokens": 120,
+        })
+        self.assertEqual(fields, {
+            "input_tokens": 100,
+            "cache_read_input_tokens": 40,
+            "cache_write_input_tokens": 12,
+            "output_tokens": 20,
+            "reasoning_tokens": 7,
+            "total_tokens": 120,
+        })
+
+    def test_conversation_cost_includes_detailed_token_categories(self):
+        conversation = [
+            assistant_message("answer", usage={
+                "prompt_tokens": 100,
+                "prompt_tokens_details": {"cached_tokens": 40},
+                "completion_tokens": 20,
+                "completion_tokens_details": {"reasoning_tokens": 7},
+                "total_tokens": 120,
+                "cost": 0.004,
+            }),
+            {"role": "system", "content": "handover", "compaction_usage": {
+                "input_tokens": 50,
+                "cache_creation_input_tokens": 12,
+                "output_tokens": 5,
+                "total_tokens": 55,
+                "cost": 0.001,
+            }},
+        ]
+        summary = conversation_cost(conversation)
+        self.assertEqual(summary["input_tokens"], 150)
+        self.assertEqual(summary["cache_read_input_tokens"], 40)
+        self.assertEqual(summary["cache_write_input_tokens"], 12)
+        self.assertEqual(summary["output_tokens"], 25)
+        self.assertEqual(summary["reasoning_tokens"], 7)
+        self.assertEqual(summary["total_tokens"], 175)
+        self.assertAlmostEqual(summary["cost"], 0.005)
 
     def test_conversation_cost_marks_missing_cost_unknown(self):
         summary = conversation_cost([assistant_message("answer", usage={"total_tokens": 3})])
