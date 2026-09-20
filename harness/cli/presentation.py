@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from harness import config, get_version
-from harness.conversation import YOU_PROMPT, conversation_cost
+from harness.conversation import YOU_PROMPT, conversation_cost, usage_cost_fields
 from harness.config import CONTEXT_COMPACTION_CAP, CONTEXT_COMPACTION_RATIO
 from harness.llm import filter_models, get_available_models
 
@@ -47,16 +47,19 @@ def _print_cost(conversation: list[Dict[str, Any]], last: bool = False) -> None:
         return
     if last:
         usage = summary["last_usage"] or {}
-        details = usage.get("prompt_tokens_details")
-        cached = details.get("cached_tokens") if isinstance(details, dict) else None
+        fields = usage_cost_fields(usage)
         cost = usage.get("cost")
         try:
             cost_text = f"${float(cost):.6f}" if cost is not None else "unknown"
         except (TypeError, ValueError):
             cost_text = "unknown"
-        print(f"\033[90m▸ last call: {cost_text} · {_format_tokens(usage.get('prompt_tokens'))} in / "
-              f"{_format_tokens(usage.get('completion_tokens'))} out · "
-              f"{_format_tokens(cached)} cached\033[0m")
+        print(f"\033[90m▸ last call: {cost_text} · "
+              f"{_format_tokens(fields['input_tokens'])} input "
+              f"({_format_tokens(fields['cache_read_input_tokens'])} cache read / "
+              f"{_format_tokens(fields['cache_write_input_tokens'])} cache write) · "
+              f"{_format_tokens(fields['output_tokens'])} output · "
+              f"{_format_tokens(fields['reasoning_tokens'])} reasoning · "
+              f"{_format_tokens(fields['total_tokens'])} total\033[0m")
         return
     cost = summary["cost"]
     cost_text = f"${cost:.6f}" if cost is not None else "unknown"
