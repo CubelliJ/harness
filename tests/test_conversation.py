@@ -17,6 +17,7 @@ from harness.conversation import (
     compact_conversation,
     estimate_tokens,
     tool_message,
+    estimated_usage_cost,
     usage_cost_breakdown,
     usage_cost_fields,
     user_message,
@@ -71,6 +72,25 @@ class ConversationTestCase(unittest.TestCase):
             "reasoning_tokens": 7,
             "total_tokens": 120,
         })
+
+    def test_estimated_usage_cost_separates_fresh_and_cached_input(self):
+        costs = estimated_usage_cost(
+            {
+                "prompt_tokens": 1000,
+                "prompt_tokens_details": {"cached_tokens": 700},
+                "cache_creation_input_tokens": 100,
+                "completion_tokens": 200,
+            },
+            input_cost_per_million=1.0,
+            cache_read_cost_per_million=0.1,
+            cache_write_cost_per_million=0.5,
+            output_cost_per_million=2.0,
+        )
+        self.assertAlmostEqual(costs["input_cost"], 0.0002)
+        self.assertAlmostEqual(costs["cache_read_cost"], 0.00007)
+        self.assertAlmostEqual(costs["cache_write_cost"], 0.00005)
+        self.assertAlmostEqual(costs["output_cost"], 0.0004)
+        self.assertIsNone(costs["reasoning_cost"])
 
     def test_usage_cost_breakdown_reads_provider_category_costs(self):
         breakdown = usage_cost_breakdown({

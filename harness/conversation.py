@@ -271,8 +271,46 @@ def usage_cost_breakdown(usage: Dict[str, Any]) -> Dict[str, Optional[float]]:
     }
 
 
-def conversation_cost(conversation: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
-    """Aggregate detailed provider-reported usage retained on the conversation."""
+def estimated_usage_cost(
+    usage: Dict[str, Any],
+    *,
+    input_cost_per_million: Optional[float] = None,
+    cache_read_cost_per_million: Optional[float] = None,
+    cache_write_cost_per_million: Optional[float] = None,
+    output_cost_per_million: Optional[float] = None,
+) -> Dict[str, Optional[float]]:
+    """Estimate category dollars from token counts and explicit rates.
+
+    Rates are USD per million tokens. Cache-read/write rates are intentionally
+    separate because providers commonly price them differently. A missing rate
+    leaves that category unknown.
+    """
+    fields = usage_cost_fields(usage)
+    cached = fields["cache_read_input_tokens"]
+    written = fields["cache_write_input_tokens"]
+    fresh = max(0, fields["input_tokens"] - cached - written)
+
+    def estimate(tokens: int, rate: Optional[float]) -> Optional[float]:
+        return None if rate is None else tokens * rate / 1_000_000
+
+    return {
+        "input_cost": estimate(fresh, input_cost_per_million),
+        "cache_read_cost": estimate(cached, cache_read_cost_per_million),
+        "cache_write_cost": estimate(written, cache_write_cost_per_million),
+        "output_cost": estimate(fields["output_tokens"], output_cost_per_million),
+        "reasoning_cost": None,
+    }
+
+
+def conversation_cost(
+    conversation: Sequence[Dict[str, Any]],
+    *,
+    input_cost_per_million: Optional[float] = None,
+    cache_read_cost_per_million: Optional[float] = None,
+    cache_write_cost_per_million: Optional[float] = None,
+    output_cost_per_million: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Aggregate usage and provider-reported or locally estimated costs."""
     calls = 0
     fields = {
         "input_tokens": 0,
@@ -298,8 +336,17 @@ def conversation_cost(conversation: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         for key in fields:
             fields[key] += normalized[key]
         breakdown = usage_cost_breakdown(usage)
+        estimated = estimated_usage_cost(
+            usage,
+            input_cost_per_million=input_cost_per_million,
+            cache_read_cost_per_million=cache_read_cost_per_million,
+            cache_write_cost_per_million=cache_write_cost_per_million,
+            output_cost_per_million=output_cost_per_million,
+        )
         for key in cost_fields:
             amount = breakdown[key]
+            if amount is None:
+                amount = estimated[key]
             if amount is None:
                 cost_reported[key] = False
             else:

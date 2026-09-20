@@ -8,7 +8,13 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from harness import config, get_version
-from harness.conversation import YOU_PROMPT, conversation_cost, usage_cost_breakdown, usage_cost_fields
+from harness.conversation import (
+    YOU_PROMPT,
+    conversation_cost,
+    estimated_usage_cost,
+    usage_cost_breakdown,
+    usage_cost_fields,
+)
 from harness.config import CONTEXT_COMPACTION_CAP, CONTEXT_COMPACTION_RATIO
 from harness.llm import filter_models, get_available_models
 
@@ -57,8 +63,18 @@ def _print_context(prompt_tokens: Optional[int], context_limit: Optional[int]) -
     print(f"\033[90m▸ context {usage} / {limit} tokens \033[36m{bar}\033[0m")
 
 
+def _pricing_kwargs() -> Dict[str, Optional[float]]:
+    active = config.backend_config()
+    return {
+        "input_cost_per_million": active.input_cost_per_million,
+        "cache_read_cost_per_million": active.cache_read_cost_per_million,
+        "cache_write_cost_per_million": active.cache_write_cost_per_million,
+        "output_cost_per_million": active.output_cost_per_million,
+    }
+
+
 def _print_cost(conversation: list[Dict[str, Any]], last: bool = False) -> None:
-    summary = conversation_cost(conversation)
+    summary = conversation_cost(conversation, **_pricing_kwargs())
     if not summary["calls"]:
         print("\033[90m▸ no provider usage recorded yet\033[0m")
         return
@@ -73,7 +89,13 @@ def _print_cost(conversation: list[Dict[str, Any]], last: bool = False) -> None:
               f"{_format_tokens(fields['output_tokens'])} output · "
               f"{_format_tokens(fields['reasoning_tokens'])} reasoning · "
               f"{_format_tokens(fields['total_tokens'])} total\033[0m")
-        print(f"\033[90m  cost breakdown: {_cost_breakdown_text(usage_cost_breakdown(usage))}\033[0m")
+        provider_breakdown = usage_cost_breakdown(usage)
+        estimated_breakdown = estimated_usage_cost(usage, **_pricing_kwargs())
+        breakdown = {
+            key: provider_breakdown[key] if provider_breakdown[key] is not None else estimated_breakdown[key]
+            for key in provider_breakdown
+        }
+        print(f"\033[90m  cost breakdown: {_cost_breakdown_text(breakdown)}\033[0m")
         return
     cost = summary["cost"]
     cost_text = _format_cost(cost)
