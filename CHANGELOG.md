@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.37.0](https://github.com/CubelliJ/harness/compare/v0.36.0...v0.37.0) (2026-09-21)
+
+
+### Features
+
+* add detailed API cost accounting ([2ee2292](https://github.com/CubelliJ/harness/commit/2ee229278e64d2c562e7693e1e6e6e0d568274b2))
+* apply provider pricing overrides ([8903cbd](https://github.com/CubelliJ/harness/commit/8903cbdc636971b716a045388c557f65940edce2))
+* estimate category costs from configurable rates ([1bdf83a](https://github.com/CubelliJ/harness/commit/1bdf83a55fcc97beea1f2c0c6ce4363d9ec58355))
+* expand detailed API cost accounting ([f87a9e1](https://github.com/CubelliJ/harness/commit/f87a9e174f5afa8121fc247916981ddacfc420ad))
+* show detailed last-call cost breakdown ([34f9e80](https://github.com/CubelliJ/harness/commit/34f9e8087404beca7f80bcdafbe10a2f569a3be0))
+* show provider cost category breakdown ([4132e07](https://github.com/CubelliJ/harness/commit/4132e07cf36c3f31f68705f93d25d091fc7ccc8d))
+
 ## [0.36.0](https://github.com/CubelliJ/harness/compare/v0.35.1...v0.36.0) (2026-09-16)
 
 
