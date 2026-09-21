@@ -170,13 +170,160 @@ def _usage_number(usage: Dict[str, Any], key: str) -> int:
     return number if number >= 0 else 0
 
 
-def conversation_cost(conversation: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
-    """Aggregate provider-reported usage retained on assistant messages."""
+def _first_usage_number(usage: Dict[str, Any], *keys: str) -> int:
+    """Read the first present non-negative numeric usage field."""
+    for key in keys:
+        if key in usage:
+            return _usage_number(usage, key)
+    return 0
+
+
+def usage_cost_fields(usage: Dict[str, Any]) -> Dict[str, int]:
+    """Normalize common provider token fields for cost accounting.
+
+    OpenAI-compatible gateways commonly report ``prompt_tokens`` and nested
+    ``prompt_tokens_details.cached_tokens``. Anthropic-compatible gateways may
+    instead report ``input_tokens``, ``cache_read_input_tokens`` and
+    ``cache_creation_input_tokens``. Keep the original usage object intact, but
+    expose a stable accounting vocabulary for summaries and future pricing.
+    """
+    prompt_details = usage.get("prompt_tokens_details")
+    prompt_details = prompt_details if isinstance(prompt_details, dict) else {}
+    completion_details = usage.get("completion_tokens_details")
+    completion_details = completion_details if isinstance(completion_details, dict) else {}
+    input_tokens = _first_usage_number(usage, "prompt_tokens", "input_tokens")
+    cache_read = _first_usage_number(
+        usage, "cache_read_input_tokens", "cached_input_tokens", "cache_read_tokens",
+    )
+    if not cache_read:
+        cache_read = _first_usage_number(prompt_details, "cached_tokens", "cache_read_input_tokens")
+    cache_write = _first_usage_number(
+        usage, "cache_creation_input_tokens", "cache_write_input_tokens", "cache_write_tokens",
+    )
+    if not cache_write:
+        cache_write = _first_usage_number(prompt_details, "cache_write_tokens", "cache_creation_input_tokens")
+    output_tokens = _first_usage_number(usage, "completion_tokens", "output_tokens")
+    reasoning_tokens = _first_usage_number(
+        usage, "reasoning_tokens", "reasoning_output_tokens",
+    )
+    if not reasoning_tokens:
+        reasoning_tokens = _first_usage_number(completion_details, "reasoning_tokens")
+    total_tokens = _first_usage_number(usage, "total_tokens")
+    return {
+        "input_tokens": input_tokens,
+        "cache_read_input_tokens": cache_read,
+        "cache_write_input_tokens": cache_write,
+        "output_tokens": output_tokens,
+        "reasoning_tokens": reasoning_tokens,
+        "total_tokens": total_tokens,
+    }
+
+
+def _usage_cost_number(usage: Dict[str, Any], *keys: str) -> Optional[float]:
+    """Read a provider-reported dollar amount without confusing it with tokens."""
+    for key in keys:
+        if key not in usage:
+            continue
+        try:
+            value = float(usage[key])
+        except (TypeError, ValueError):
+            continue
+        if value >= 0:
+            return value
+    return None
+
+
+def usage_cost_breakdown(usage: Dict[str, Any]) -> Dict[str, Optional[float]]:
+    """Normalize provider-reported dollar costs by billing category.
+
+    Providers do not standardize this optional detail. OpenRouter commonly
+    places it under ``cost_details``; other gateways may return the same fields
+    at the top level. Missing categories remain ``None`` so the UI can say
+    ``unknown`` instead of inventing a price allocation.
+    """
+    details = usage.get("cost_details")
+    details = details if isinstance(details, dict) else {}
+    sources = (details, usage)
+
+    def find(*keys: str) -> Optional[float]:
+        for source in sources:
+            value = _usage_cost_number(source, *keys)
+            if value is not None:
+                return value
+        return None
+
+    return {
+        "input_cost": find(
+            "input_cost", "prompt_cost", "inference_input_cost", "upstream_inference_input_cost",
+        ),
+        "cache_read_cost": find(
+            "cache_read_cost", "input_cache_read_cost", "cache_read_input_cost",
+            "cache_read", "input_cache_read", "upstream_inference_cache_read_cost",
+        ),
+        "cache_write_cost": find(
+            "cache_write_cost", "input_cache_write_cost", "cache_creation_input_cost",
+            "cache_write", "input_cache_write", "upstream_inference_cache_write_cost",
+        ),
+        "output_cost": find(
+            "output_cost", "completion_cost", "inference_output_cost", "upstream_inference_output_cost",
+        ),
+        "reasoning_cost": find("reasoning_cost", "reasoning_output_cost"),
+    }
+
+
+def estimated_usage_cost(
+    usage: Dict[str, Any],
+    *,
+    input_cost_per_million: Optional[float] = None,
+    cache_read_cost_per_million: Optional[float] = None,
+    cache_write_cost_per_million: Optional[float] = None,
+    output_cost_per_million: Optional[float] = None,
+) -> Dict[str, Optional[float]]:
+    """Estimate category dollars from token counts and explicit rates.
+
+    Rates are USD per million tokens. Cache-read/write rates are intentionally
+    separate because providers commonly price them differently. A missing rate
+    leaves that category unknown.
+    """
+    fields = usage_cost_fields(usage)
+    cached = fields["cache_read_input_tokens"]
+    written = fields["cache_write_input_tokens"]
+    fresh = max(0, fields["input_tokens"] - cached - written)
+
+    def estimate(tokens: int, rate: Optional[float]) -> Optional[float]:
+        return None if rate is None else tokens * rate / 1_000_000
+
+    return {
+        "input_cost": estimate(fresh, input_cost_per_million),
+        "cache_read_cost": estimate(cached, cache_read_cost_per_million),
+        "cache_write_cost": estimate(written, cache_write_cost_per_million),
+        "output_cost": estimate(fields["output_tokens"], output_cost_per_million),
+        "reasoning_cost": None,
+    }
+
+
+def conversation_cost(
+    conversation: Sequence[Dict[str, Any]],
+    *,
+    input_cost_per_million: Optional[float] = None,
+    cache_read_cost_per_million: Optional[float] = None,
+    cache_write_cost_per_million: Optional[float] = None,
+    output_cost_per_million: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Aggregate usage and provider-reported or locally estimated costs."""
     calls = 0
-    prompt_tokens = 0
-    completion_tokens = 0
-    cached_input_tokens = 0
-    total_tokens = 0
+    fields = {
+        "input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 0,
+        "reasoning_tokens": 0,
+        "total_tokens": 0,
+    }
+    cost_fields = {key: 0.0 for key in (
+        "input_cost", "cache_read_cost", "cache_write_cost", "output_cost", "reasoning_cost",
+    )}
+    cost_reported = {key: True for key in cost_fields}
     cost = 0.0
     cost_known = True
     last: Optional[Dict[str, Any]] = None
@@ -185,12 +332,25 @@ def conversation_cost(conversation: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         if not isinstance(usage, dict):
             continue
         calls += 1
-        prompt_tokens += _usage_number(usage, "prompt_tokens")
-        completion_tokens += _usage_number(usage, "completion_tokens")
-        prompt_details = usage.get("prompt_tokens_details")
-        if isinstance(prompt_details, dict):
-            cached_input_tokens += _usage_number(prompt_details, "cached_tokens")
-        total_tokens += _usage_number(usage, "total_tokens")
+        normalized = usage_cost_fields(usage)
+        for key in fields:
+            fields[key] += normalized[key]
+        breakdown = usage_cost_breakdown(usage)
+        estimated = estimated_usage_cost(
+            usage,
+            input_cost_per_million=input_cost_per_million,
+            cache_read_cost_per_million=cache_read_cost_per_million,
+            cache_write_cost_per_million=cache_write_cost_per_million,
+            output_cost_per_million=output_cost_per_million,
+        )
+        for key in cost_fields:
+            amount = breakdown[key]
+            if amount is None:
+                amount = estimated[key]
+            if amount is None:
+                cost_reported[key] = False
+            else:
+                cost_fields[key] += amount
         raw_cost = usage.get("cost")
         try:
             if raw_cost is None:
@@ -199,13 +359,18 @@ def conversation_cost(conversation: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         except (TypeError, ValueError):
             cost_known = False
         last = usage
+    # Preserve historical keys while making the detailed names canonical.
     return {
         "calls": calls,
-        "prompt_tokens": prompt_tokens,
-        "completion_tokens": completion_tokens,
-        "cached_input_tokens": cached_input_tokens,
-        "total_tokens": total_tokens,
+        "prompt_tokens": fields["input_tokens"],
+        "completion_tokens": fields["output_tokens"],
+        "cached_input_tokens": fields["cache_read_input_tokens"],
+        **fields,
         "cost": cost if cost_known else None,
+        "cost_breakdown": {
+            key: value if cost_reported[key] else None
+            for key, value in cost_fields.items()
+        },
         "last_usage": last,
     }
 

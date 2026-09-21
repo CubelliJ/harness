@@ -31,6 +31,10 @@ class BackendConfig:
     auth_mode: str
     timeout_s: int
     reasoning_effort: Optional[str]
+    input_cost_per_million: Optional[float]
+    cache_read_cost_per_million: Optional[float]
+    cache_write_cost_per_million: Optional[float]
+    output_cost_per_million: Optional[float]
 
     @property
     def display_name(self) -> str:
@@ -83,6 +87,19 @@ def _try_load_dotenv() -> None:
                 os.environ["OPENROUTER_MODEL"] = value
 
 
+def _optional_rate(name: str) -> Optional[float]:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return None
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a number") from exc
+    if value < 0:
+        raise ValueError(f"{name} must be non-negative")
+    return value
+
+
 def backend_config() -> BackendConfig:
     """Resolve generic settings, falling back to the legacy OpenRouter preset."""
     base_url = os.environ.get("HARNESS_BASE_URL", OPENROUTER_BASE_URL).strip().rstrip("/")
@@ -111,6 +128,10 @@ def backend_config() -> BackendConfig:
         auth_mode=auth_mode,
         timeout_s=timeout_s,
         reasoning_effort=os.environ.get("HARNESS_REASONING_EFFORT", "").strip() or None,
+        input_cost_per_million=_optional_rate("HARNESS_INPUT_COST_PER_MILLION"),
+        cache_read_cost_per_million=_optional_rate("HARNESS_CACHE_READ_COST_PER_MILLION"),
+        cache_write_cost_per_million=_optional_rate("HARNESS_CACHE_WRITE_COST_PER_MILLION"),
+        output_cost_per_million=_optional_rate("HARNESS_OUTPUT_COST_PER_MILLION"),
     )
 
 

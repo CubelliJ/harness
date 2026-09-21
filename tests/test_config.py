@@ -50,6 +50,23 @@ class BackendConfigTests(unittest.TestCase):
         os.environ["HARNESS_AUTH_MODE"] = "bearer"
         self.assertEqual(config.backend_config().headers()["Authorization"], "Bearer secret")
 
+    def test_cost_rates_are_loaded_and_reject_invalid_values(self):
+        os.environ.update({
+            "HARNESS_AUTH_MODE": "none",
+            "HARNESS_INPUT_COST_PER_MILLION": "1.25",
+            "HARNESS_CACHE_READ_COST_PER_MILLION": "0.12",
+            "HARNESS_CACHE_WRITE_COST_PER_MILLION": "0.3",
+            "HARNESS_OUTPUT_COST_PER_MILLION": "4",
+        })
+        active = config.backend_config()
+        self.assertEqual(active.input_cost_per_million, 1.25)
+        self.assertEqual(active.cache_read_cost_per_million, 0.12)
+        self.assertEqual(active.cache_write_cost_per_million, 0.3)
+        self.assertEqual(active.output_cost_per_million, 4.0)
+        os.environ["HARNESS_OUTPUT_COST_PER_MILLION"] = "-1"
+        with self.assertRaisesRegex(ValueError, "non-negative"):
+            config.backend_config()
+
     def test_bearer_without_key_fails_clearly(self):
         os.environ["HARNESS_AUTH_MODE"] = "bearer"
         with self.assertRaisesRegex(RuntimeError, "HARNESS_API_KEY"):
