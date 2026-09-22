@@ -410,14 +410,16 @@ def compact_conversation(
 ) -> bool:
     """Prune old turns until ``conversation`` fits within ``budget``.
 
-    With ``force=True``, remove the oldest complete turn even when the
-    conversation is already within its automatic compaction budget. This is
-    used by the manual ``/compact`` command and does not require a provider
-    context limit. When supplied, ``summarize`` receives the complete history
-    before eviction and may return either summary text or ``(text, usage)``.
-    The system prompt is always retained, and eviction happens only at
-    complete user turns so assistant tool calls stay paired with their tool
-    results. Returns whether anything was compacted.
+    Automatic compaction keeps only the newest complete user turn, while
+    ``force=True`` performs the same eviction even when the conversation is
+    within budget or no provider context limit is available. This keeps the
+    retained context close to the system prompt plus a handover instead of
+    retaining arbitrary recent history up to the budget. When supplied,
+    ``summarize`` receives the complete history before eviction and may return
+    either summary text or ``(text, usage)``. The system prompt is always
+    retained, and eviction happens only at complete user turns so assistant
+    tool calls stay paired with their tool results. Returns whether anything
+    was compacted.
     """
     if not conversation or (not force and (
         budget is None or budget < 1 or sum(token_counter(m) for m in conversation) <= budget
@@ -430,22 +432,23 @@ def compact_conversation(
         index for index, message in enumerate(rest)
         if message.get("role") == "user" and not message.get("image_context")
     ]
-    # Preserve the newest user turn. Manual compaction removes all older
-    # complete turns; automatic compaction removes as many older turns as the
-    # budget requires.
+    # Preserve the newest user turn. Both automatic and manual compaction
+    # remove every older complete turn.
     if len(user_boundaries) < (2 if force else 1):
         return False
-    if force:
-        start = user_boundaries[-1]
-    else:
-        start = user_boundaries[-1]
-        for boundary in user_boundaries[1:]:
-            if sum(token_counter(m) for m in system + rest[boundary:]) <= budget:
-                start = boundary
-                break
-
+    # Keep only the newest complete turn. Do not retain older recent turns just
+    # because they fit within the budget: the handover is the compacted record
+    # of that history, and the next provider request can rediscover anything
+    # else it needs from the workspace.
+    start = user_boundaries[-1]
     removed = rest[:start]
-    if not removed:
+    if not removed or all(
+        message.get("role") == "system"
+        and str(message.get("content") or "").startswith("[Conversation handover]")
+        for message in removed
+    ):
+        # Do not repeatedly replace a handover when oversized image context (or
+        # another ineligible message) leaves no complete turn to evict.
         return False
     if on_start is not None:
         on_start()

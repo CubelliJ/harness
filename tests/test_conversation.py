@@ -209,6 +209,25 @@ class ConversationTestCase(unittest.TestCase):
         self.assertEqual(roles, ["system", "system", "user"])
         self.assertEqual(conversation[-1]["content"], "current request")
 
+    def test_automatic_compaction_removes_all_older_turns(self):
+        conversation = [
+            system_message("rules"),
+            user_message("first request"),
+            assistant_message("first answer"),
+            user_message("second request"),
+            assistant_message("second answer"),
+            user_message("current request"),
+            assistant_message("current answer"),
+        ]
+        changed = compact_conversation(
+            conversation, 1, token_counter=lambda _: 1,
+        )
+        self.assertTrue(changed)
+        self.assertEqual(
+            [message.get("content") for message in conversation[2:]],
+            ["current request", "current answer"],
+        )
+
     def test_compaction_uses_handover_summary_and_usage(self):
         conversation = [
             system_message("rules"),
@@ -248,6 +267,27 @@ class ConversationTestCase(unittest.TestCase):
         )
         self.assertTrue(changed)
         self.assertEqual(started, [True])
+
+    def test_automatic_compaction_does_not_replace_existing_handover(self):
+        handover = system_message("[Conversation handover]\nkeep this summary")
+        conversation = [
+            system_message("rules"),
+            handover,
+            user_message("current request"),
+            assistant_message("current answer"),
+            user_message("Visual context loaded", [{"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}}]),
+        ]
+        conversation[-1]["image_context"] = True
+        started = []
+        changed = compact_conversation(
+            conversation,
+            1,
+            token_counter=lambda _: 1,
+            on_start=lambda: started.append(True),
+        )
+        self.assertFalse(changed)
+        self.assertEqual(started, [])
+        self.assertEqual(conversation[1], handover)
 
     def test_manual_compaction_works_without_budget(self):
         conversation = [

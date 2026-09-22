@@ -97,6 +97,13 @@ CONTEXT_NUDGE_TEXT = {
 }
 
 
+def compaction_budget(context_limit: Optional[int]) -> int:
+    """Return the automatic compaction threshold in estimated tokens."""
+    if not context_limit or context_limit < 1:
+        return CONTEXT_COMPACTION_CAP
+    return min(CONTEXT_COMPACTION_CAP, int(context_limit * CONTEXT_COMPACTION_RATIO))
+
+
 def append_context_budget_nudges(
     conversation: list[dict],
     prompt_tokens: Optional[int],
@@ -200,11 +207,6 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
     if resumed:
         print(f"\033[90m▸ resumed conversation ({len(conversation)} messages)\033[0m")
 
-    def compaction_budget() -> Optional[int]:
-        if not context_limit or context_limit < 1:
-            return None
-        return min(CONTEXT_COMPACTION_CAP, int(context_limit * CONTEXT_COMPACTION_RATIO))
-
     def show_handover() -> None:
         handovers = [
             str(message.get("content") or "")
@@ -222,7 +224,7 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
         nonlocal context_tokens, sent_context_nudges
         changed = compact_conversation(
             conversation,
-            compaction_budget(),
+            compaction_budget(context_limit),
             force=force,
             summarize=summarize_conversation,
             on_start=lambda: print("\033[90m▸ compacting conversation…\033[0m", flush=True),
@@ -303,7 +305,8 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
         return added
 
     def _process_turn(user_input: str) -> None:
-        compact()
+        # run_turn performs automatic compaction before each provider call.
+        # Avoid compacting twice before the first request.
         persist()
         run_turn(
             conversation,
