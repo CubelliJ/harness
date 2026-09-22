@@ -8,11 +8,16 @@ from harness.cli.agent_loop import (
     run_turn,
 )
 from harness.cli.mode import ModeState, SessionMode
-from harness.cli.repl import append_context_budget_nudges
+from harness.cli.repl import append_context_budget_nudges, compaction_budget
 from harness.conversation import system_message
 
 
 class ContextBudgetNudgeTestCase(unittest.TestCase):
+    def test_compaction_budget_uses_known_limit_or_200k_fallback(self):
+        self.assertEqual(compaction_budget(None), 200_000)
+        self.assertEqual(compaction_budget(100_000), 25_000)
+        self.assertEqual(compaction_budget(1_000_000), 200_000)
+
     def test_nudges_are_added_once_at_each_provider_usage_threshold(self):
         conversation = [{"role": "system", "content": "system"}]
         sent = set()
