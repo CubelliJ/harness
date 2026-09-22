@@ -38,6 +38,10 @@ python -m harness configure
 | `HARNESS_REQUEST_TIMEOUT_S` | `600` | Request timeout in seconds |
 | `HARNESS_BACKEND_NAME` | `OpenRouter` | Display name used in CLI and errors |
 | `HARNESS_REASONING_EFFORT` | unset | Optional request field; omitted when unset |
+| `HARNESS_INPUT_COST_PER_MILLION` | unset | Estimated USD per million fresh input tokens |
+| `HARNESS_CACHE_READ_COST_PER_MILLION` | unset | Estimated USD per million cache-read input tokens |
+| `HARNESS_CACHE_WRITE_COST_PER_MILLION` | unset | Estimated USD per million cache-write input tokens |
+| `HARNESS_OUTPUT_COST_PER_MILLION` | unset | Estimated USD per million output tokens |
 | `OPENROUTER_API_KEY` | — | Legacy compatibility key |
 | `OPENROUTER_MODEL` | compatibility model | Legacy compatibility model |
 | `HARNESS_WORKSPACE` | current directory | Workspace root |
@@ -47,3 +51,9 @@ python -m harness configure
 | `HARNESS_NO_COLOR` | — | Disable terminal colors |
 | `HARNESS_COLOR` | — | Force terminal colors |
 | `HARNESS_STT_BIN` | `~/.harness/bin/harness-stt.app` | Speech helper path |
+
+When local rates are unset, Harness reads pricing from the selected model's
+provider metadata. For OpenRouter, threshold-based pricing overrides are
+applied to `/cost last` using that call's prompt-token count. Historical
+conversation totals use the base catalogue rates because older usage records do
+not retain a pricing snapshot.

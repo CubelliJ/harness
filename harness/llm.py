@@ -88,6 +88,74 @@ def model_context_length(body: Dict[str, Any], model_id: str) -> Optional[int]:
     return None
 
 
+def model_pricing(
+    body: Dict[str, Any], model_id: str, prompt_tokens: Optional[int] = None,
+) -> Dict[str, float]:
+    """Extract applicable model pricing as USD per million tokens.
+
+    OpenRouter exposes prices under ``pricing`` as dollars per token and may
+    provide threshold-based ``overrides``. The highest override whose
+    ``min_prompt_tokens`` is no greater than the request size is selected.
+    Unknown categories are omitted rather than guessed.
+    """
+    model = next(
+        (item for item in body.get("data") or []
+         if isinstance(item, dict) and item.get("id") == model_id),
+        None,
+    )
+    if not isinstance(model, dict):
+        return {}
+    pricing = model.get("pricing") if isinstance(model.get("pricing"), dict) else {}
+    if isinstance(prompt_tokens, int) and not isinstance(prompt_tokens, bool) and prompt_tokens >= 0:
+        overrides = [
+            item for item in pricing.get("overrides", [])
+            if isinstance(item, dict)
+            and isinstance(item.get("min_prompt_tokens"), (int, float))
+            and item["min_prompt_tokens"] <= prompt_tokens
+        ]
+        if overrides:
+            pricing = max(overrides, key=lambda item: item["min_prompt_tokens"])
+    sources = (pricing, model)
+    aliases = {
+        "input_cost_per_million": ("prompt", "input", "input_cost", "input_cost_per_million"),
+        "output_cost_per_million": ("completion", "output", "output_cost", "output_cost_per_million"),
+        "cache_read_cost_per_million": (
+            "input_cache_read", "cache_read", "cache_read_input", "cache_read_cost",
+            "cache_read_cost_per_million",
+        ),
+        "cache_write_cost_per_million": (
+            "input_cache_write", "cache_write", "cache_creation_input", "cache_write_cost",
+            "cache_write_cost_per_million",
+        ),
+    }
+    result: Dict[str, float] = {}
+    for target, keys in aliases.items():
+        for source in sources:
+            key = next((key for key in keys if key in source), None)
+            if key is None:
+                continue
+            try:
+                value = float(source[key])
+            except (TypeError, ValueError):
+                continue
+            if value >= 0:
+                # Catalogues generally report dollars/token; tolerate an
+                # explicit per-million field without scaling it twice.
+                result[target] = value if key.endswith("_per_million") else value * 1_000_000
+                break
+    return result
+
+
+def get_model_pricing(prompt_tokens: Optional[int] = None) -> Dict[str, float]:
+    """Return applicable pricing for the configured model, if available."""
+    active = backend_config()
+    try:
+        return model_pricing(_models_response(active), active.model, prompt_tokens)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        logger.warning("Could not retrieve model pricing: %s", exc)
+        return {}
+
+
 def _is_rate_limited(exc: BaseException) -> bool:
     text = str(exc).lower()
     return "429" in text or "rate-limited" in text or "rate limit" in text

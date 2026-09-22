@@ -1,5 +1,51 @@
 # Changelog
 
+## [0.37.1](https://github.com/CubelliJ/harness/compare/v0.37.0...v0.37.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* trigger patch release for automatic conversation compaction ([b20f876](https://github.com/CubelliJ/harness/commit/b20f8764c07e1a57f10a192018a399d6b568ecc6))
+* trigger patch release for automatic conversation compaction ([dca58dd](https://github.com/CubelliJ/harness/commit/dca58ddbeee4605988ca2e7c33397ce053073183))
+
+## [0.37.0](https://github.com/CubelliJ/harness/compare/v0.36.0...v0.37.0) (2026-09-21)
+
+
+### Features
+
+* add detailed API cost accounting ([2ee2292](https://github.com/CubelliJ/harness/commit/2ee229278e64d2c562e7693e1e6e6e0d568274b2))
+* apply provider pricing overrides ([8903cbd](https://github.com/CubelliJ/harness/commit/8903cbdc636971b716a045388c557f65940edce2))
+* estimate category costs from configurable rates ([1bdf83a](https://github.com/CubelliJ/harness/commit/1bdf83a55fcc97beea1f2c0c6ce4363d9ec58355))
+* expand detailed API cost accounting ([f87a9e1](https://github.com/CubelliJ/harness/commit/f87a9e174f5afa8121fc247916981ddacfc420ad))
+* show detailed last-call cost breakdown ([34f9e80](https://github.com/CubelliJ/harness/commit/34f9e8087404beca7f80bcdafbe10a2f569a3be0))
+* show provider cost category breakdown ([4132e07](https://github.com/CubelliJ/harness/commit/4132e07cf36c3f31f68705f93d25d091fc7ccc8d))
+
+## [0.36.0](https://github.com/CubelliJ/harness/compare/v0.35.1...v0.36.0) (2026-09-16)
+
+
+### Features
+
+* show recent shell and git output ([9c5e2c7](https://github.com/CubelliJ/harness/commit/9c5e2c752363677b6e73090a0a58d1b6c2524011))
+* show recent shell and git output ([1db4cbb](https://github.com/CubelliJ/harness/commit/1db4cbb7a0cf5571694fc313b5ec488fa52eef13))
+
+## [0.35.1](https://github.com/CubelliJ/harness/compare/v0.35.0...v0.35.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* validate image data before attachment ([da9e6e0](https://github.com/CubelliJ/harness/commit/da9e6e0b39af1804fc5eea327da362c04506a3dd))
+* validate image data before attachment ([78a0f24](https://github.com/CubelliJ/harness/commit/78a0f24e2780329fed06a75357d17bc79557d893))
+
+## [0.35.0](https://github.com/CubelliJ/harness/compare/v0.34.0...v0.35.0) (2026-09-12)
+
+
+### Features
+
+* add progressive context budget nudges ([f8238cc](https://github.com/CubelliJ/harness/commit/f8238cc77247ba07cf8de0de11ff4ee8fdd60110))
+* continue after context budget nudges ([2197e7d](https://github.com/CubelliJ/harness/commit/2197e7d1d83c65f4cbd362820e9c2b55ecc965ef))
+* continue after context budget nudges ([11677f9](https://github.com/CubelliJ/harness/commit/11677f9a7a88e580f0ec3792cad7d2e50e46f289))
+* strengthen compaction nudges ([95e031e](https://github.com/CubelliJ/harness/commit/95e031ebec1ec0674eb27e2f88ab09789f09d756))
+
 ## [0.34.0](https://github.com/CubelliJ/harness/compare/v0.33.1...v0.34.0) (2026-09-09)
 
 

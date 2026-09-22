@@ -27,6 +27,7 @@ ConfirmEdit = Callable[[Dict[str, Any]], tuple[bool, str]]
 ConfirmMode = Callable[[str], bool]
 ModeChanged = Callable[[SessionMode], None]
 UpdateTokens = Callable[[Optional[int]], None]
+ContextCheckpoint = Callable[[], bool]
 GenerateTitle = Callable[[], None]
 
 
@@ -69,6 +70,29 @@ def _tool_status(name: str, summary: str) -> str:
     return f"\033[90m   ├─ {color}{icon}\033[0m \033[96m{name}\033[0m \033[90m· {summary}\033[0m"
 
 
+_OUTPUT_PREVIEW_TOOLS = {"run_command", "git_status", "git_diff", "git_log", "git_branch_list"}
+
+
+def _tool_output_preview(name: str, result: Dict[str, Any]) -> str:
+    """Return a display-only preview of the last two output lines.
+
+    The complete result remains in the tool message sent to the model. This
+    preview exists only to make shell and Git activity visible in the CLI.
+    """
+    if name not in _OUTPUT_PREVIEW_TOOLS:
+        return ""
+    output_parts = []
+    for key in ("stdout", "stderr"):
+        value = result.get(key)
+        if value:
+            output_parts.append(str(value))
+    output = "\n".join(output_parts)
+    lines = [line for line in output.splitlines() if line.strip()]
+    if not lines:
+        return ""
+    return "\n".join(f"\033[90m   │ {line}\033[0m" for line in lines[-2:])
+
+
 def run_turn(
     conversation: Conversation,
     *,
@@ -80,6 +104,7 @@ def run_turn(
     confirm_edit: ConfirmEdit,
     interruptible_call: InterruptibleCall,
     update_tokens: UpdateTokens,
+    context_checkpoint: Optional[ContextCheckpoint] = None,
     confirm_mode: Optional[ConfirmMode] = None,
     mode_state: Optional[ModeState] = None,
     mode_changed: Optional[ModeChanged] = None,
@@ -129,9 +154,12 @@ def run_turn(
         if not tool_calls:
             conversation.append(assistant_message(content, usage=usage))
             persist()
-            maybe_generate_title()
+            nudged = context_checkpoint() if context_checkpoint is not None else False
             if content and not streamed_text:
                 print(f"{ASSISTANT_PREFIX}{render_markdown(content)}")
+            if nudged:
+                continue
+            maybe_generate_title()
             return
 
         if content and not streamed_text:
@@ -220,6 +248,9 @@ def run_turn(
             summary = (result.get("error") or result.get("action") or
                        result.get("path") or result.get("file_path") or "ok")
             print(_tool_status(name, summary))
+            preview = _tool_output_preview(name, result)
+            if preview:
+                print(preview)
             conversation.append(tool_message(call_id, format_tool_result_content(name, result)))
             if name == "read_image" and result.get("image_url") and not result.get("error"):
                 conversation.append(user_message(
