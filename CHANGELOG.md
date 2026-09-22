@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.37.1](https://github.com/CubelliJ/harness/compare/v0.37.0...v0.37.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* trigger patch release for automatic conversation compaction ([b20f876](https://github.com/CubelliJ/harness/commit/b20f8764c07e1a57f10a192018a399d6b568ecc6))
+* trigger patch release for automatic conversation compaction ([dca58dd](https://github.com/CubelliJ/harness/commit/dca58ddbeee4605988ca2e7c33397ce053073183))
+
 ## [0.37.0](https://github.com/CubelliJ/harness/compare/v0.36.0...v0.37.0) (2026-09-21)
 
 
