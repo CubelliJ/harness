@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.38.0](https://github.com/CubelliJ/harness/compare/v0.37.1...v0.38.0) (2026-09-25)
+
+
+### Features
+
+* add safer automatic workflows ([28dcfd7](https://github.com/CubelliJ/harness/commit/28dcfd7074a862965e1eb94fa2e49dff88d9da3d))
+* add safer automatic workflows ([596cdeb](https://github.com/CubelliJ/harness/commit/596cdeb4ced7da7d1cb5a6884cf12266040e4999))
+* allow simple commits on feature branches ([1c7b1c3](https://github.com/CubelliJ/harness/commit/1c7b1c3075459e21d0dc81cf661dfadde1f48278))
+* report automatic command safety assessments ([ddf9129](https://github.com/CubelliJ/harness/commit/ddf91290c0842189897388c2b564a539d5808e3b))
+
 ## [0.37.1](https://github.com/CubelliJ/harness/compare/v0.37.0...v0.37.1) (2026-09-22)
 
 

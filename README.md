@@ -50,9 +50,19 @@ Useful commands:
 - `/voice` — use voice input on macOS
 - `/quit` — exit Harness
 
+In Git repositories, edits are automatically applied on ordinary branches. On
+`main`, `master`, `develop`, and `staging`, or outside a Git repository, Harness
+asks before applying edits. Routine recognized validation commands (for example,
+`python -m unittest`, `pytest`, and `ruff check`) run without confirmation. Other
+ambiguous commands are checked by the configured API backend using the active
+model by default; `HARNESS_SAFETY_MODEL` can override it. A high-risk,
+unsupported, or unclassified command still requires approval. The classifier
+sends only the proposed command and a short risk rubric. Shell command execution
+remains workspace-scoped.
+
 Press Escape at any time while the agent is thinking, running a tool, or waiting
-for edit/command approval to interrupt the active turn and return to the prompt
-for feedback. Shell commands always require confirmation. Readable session transcripts are
+for edit/command approval to interrupt the active turn and return to the prompt.
+Readable session transcripts are
 saved in `~/harness_logs/`, and the active conversation state is persisted in
 `~/harness_logs/`. Harness automatically compacts older complete turns when the
 conversation exceeds 25% of the model context window or 200,000 tokens,
