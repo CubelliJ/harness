@@ -14,12 +14,12 @@ from typing import Any, Dict, Optional
 
 import harness.tools as tools
 
-def resolve_abs_path(path_str: str) -> Path:
-    """Resolve a path and ensure it remains inside the configured workspace.
+def resolve_abs_path(path_str: str, approved_roots=()) -> Path:
+    """Resolve a path inside the workspace or a user-approved external root.
 
     ``Path.resolve`` is used before validation so that both ``..`` traversal
-    and symlinks pointing outside the workspace are rejected. ``strict=False``
-    allows ``edit_file`` to create a new file that does not exist yet.
+    and symlinks pointing outside an allowed root are rejected. ``strict=False``
+    allows ``edit_file`` to create a new file that does not yet exist.
     """
     root = tools.workspace_root().expanduser().resolve()
     path = Path(path_str).expanduser()
@@ -27,18 +27,24 @@ def resolve_abs_path(path_str: str) -> Path:
         path = root / path
     resolved = path.resolve(strict=False)
 
-    try:
-        resolved.relative_to(root)
-    except ValueError as exc:
-        raise ValueError(
-            f"Path escapes the configured workspace: {path_str!r}"
-        ) from exc
+    allowed_roots = [root]
+    allowed_roots.extend(Path(item).expanduser().resolve() for item in approved_roots)
+    if not any(_is_within(resolved, allowed_root) for allowed_root in allowed_roots):
+        raise ValueError(f"Path escapes the configured workspace: {path_str!r}")
 
     return resolved
 
 
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
 def read_file(
-    filename: str, start_line: int = 1, max_lines: int = 1000
+    filename: str, start_line: int = 1, max_lines: int = 1000, *, approved_roots=()
 ) -> Dict[str, Any]:
     """Read a bounded, one-based line window from a text file.
 
@@ -51,7 +57,7 @@ def read_file(
     if not isinstance(max_lines, int) or isinstance(max_lines, bool) or not 1 <= max_lines <= 1000:
         return {"error": "max_lines must be an integer between 1 and 1000"}
     try:
-        full_path = resolve_abs_path(filename)
+        full_path = resolve_abs_path(filename, approved_roots)
     except ValueError as e:
         return {"error": str(e)}
     if not full_path.is_file():
@@ -96,10 +102,10 @@ def _image_mime_type(data: bytes) -> Optional[str]:
     return None
 
 
-def read_image(filename: str) -> Dict[str, Any]:
+def read_image(filename: str, *, approved_roots=()) -> Dict[str, Any]:
     """Read a valid workspace image and return an inline provider data URL."""
     try:
-        full_path = resolve_abs_path(filename)
+        full_path = resolve_abs_path(filename, approved_roots)
     except ValueError as exc:
         return {"error": str(exc)}
     if not full_path.is_file():
@@ -125,10 +131,10 @@ def read_image(filename: str) -> Dict[str, Any]:
     }
 
 
-def list_files(path: str = ".") -> Dict[str, Any]:
+def list_files(path: str = ".", *, approved_roots=()) -> Dict[str, Any]:
     """List files and directories at path."""
     try:
-        full_path = resolve_abs_path(path)
+        full_path = resolve_abs_path(path, approved_roots)
     except ValueError as e:
         return {"error": str(e)}
     if not full_path.is_dir():
@@ -186,6 +192,8 @@ def search_files(
     path: str = ".",
     glob: str = "*",
     max_results: int = 100,
+    *,
+    approved_roots=(),
 ) -> Dict[str, Any]:
     """Recursively search text files, honoring the workspace .gitignore."""
     if not query:
@@ -193,8 +201,9 @@ def search_files(
     if max_results < 1:
         return {"error": "max_results must be at least 1"}
     try:
-        root = resolve_abs_path(path)
-        workspace = tools.workspace_root().resolve()
+        root = resolve_abs_path(path, approved_roots)
+        workspace_root = tools.workspace_root().expanduser().resolve()
+        workspace = workspace_root if _is_within(root, workspace_root) else root
     except ValueError as e:
         return {"error": str(e)}
     if not root.is_dir():
@@ -206,6 +215,10 @@ def search_files(
         if not candidate.is_file() or not fnmatch.fnmatch(candidate.name, glob):
             continue
         relative = candidate.relative_to(workspace)
+        try:
+            candidate.resolve(strict=False).relative_to(workspace)
+        except ValueError:
+            continue
         if any(part in {".git", ".hg", ".svn", "__pycache__", ".venv", "venv", "node_modules"}
                for part in relative.parts):
             continue
@@ -229,10 +242,12 @@ def search_files(
 
 
 
-def edit_preview(path: str, old_str: str, new_str: str) -> Dict[str, Any]:
+def edit_preview(
+    path: str, old_str: str, new_str: str, *, approved_roots=()
+) -> Dict[str, Any]:
     """Validate an edit and return its proposed contents and unified diff."""
     try:
-        full_path = resolve_abs_path(path)
+        full_path = resolve_abs_path(path, approved_roots)
     except ValueError as e:
         return {"error": str(e)}
 
@@ -263,9 +278,11 @@ def edit_preview(path: str, old_str: str, new_str: str) -> Dict[str, Any]:
 
 
 
-def edit_file(path: str, old_str: str, new_str: str, *, apply: bool = True) -> Dict[str, Any]:
+def edit_file(
+    path: str, old_str: str, new_str: str, *, apply: bool = True, approved_roots=()
+) -> Dict[str, Any]:
     """Propose an edit, optionally applying it with a backup and atomic replace."""
-    preview = edit_preview(path, old_str, new_str)
+    preview = edit_preview(path, old_str, new_str, approved_roots=approved_roots)
     if preview.get("error") or preview.get("action") == "old_str not found":
         return preview
     if not apply:
@@ -278,12 +295,18 @@ def edit_file(path: str, old_str: str, new_str: str, *, apply: bool = True) -> D
     if full_path.exists():
         # Keep recovery copies completely outside the repository. Git remains
         # the durable/versioned history; these are local safety snapshots only.
-        root = tools.workspace_root().expanduser().resolve()
-        relative = full_path.relative_to(root)
+        workspace_root = tools.workspace_root().expanduser().resolve()
+        backup_scope = next(
+            (candidate for candidate in [workspace_root, *(
+                Path(item).expanduser().resolve() for item in approved_roots
+            )] if _is_within(full_path, candidate)),
+            workspace_root,
+        )
+        relative = full_path.relative_to(backup_scope)
         backup_root = Path(os.environ.get(
             "HARNESS_BACKUP_DIR", "~/.harness/backups"
         )).expanduser()
-        workspace_id = hashlib.sha256(str(root).encode("utf-8")).hexdigest()[:16]
+        workspace_id = hashlib.sha256(str(backup_scope).encode("utf-8")).hexdigest()[:16]
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         backup = backup_root / workspace_id / relative.parent / (
             relative.name + f".harness.bak.{stamp}"

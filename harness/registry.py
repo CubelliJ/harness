@@ -253,7 +253,9 @@ def get_full_system_prompt(workspace: Optional[Path] = None) -> str:
     return prompt
 
 
-def execute_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
+def execute_tool(
+    tool_name: str, args: Dict[str, Any], *, approved_roots=()
+) -> Dict[str, Any]:
     """Execute a tool after validating model-supplied arguments.
 
     Required fields are checked here rather than relying on ``dict.get``
@@ -280,24 +282,27 @@ def execute_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
             return load_skill(args["skill"])
         if tool_name == "read_file":
             return tool(
-                args["filename"], args.get("start_line", 1), args.get("max_lines", 1000)
+                args["filename"], args.get("start_line", 1), args.get("max_lines", 1000),
+                approved_roots=approved_roots,
             )
         if tool_name == "read_image":
-            return tool(args["filename"])
+            return tool(args["filename"], approved_roots=approved_roots)
         if tool_name == "run_command":
             return tool(args["command"], args.get("timeout", 120))
         if tool_name == "list_files":
-            return tool(args.get("path", "."))
+            return tool(args.get("path", "."), approved_roots=approved_roots)
         if tool_name == "search_files":
             return tool(
                 args["query"], args.get("path", "."), args.get("glob", "*"),
-                args.get("max_results", 100),
+                args.get("max_results", 100), approved_roots=approved_roots,
             )
         if tool_name == "edit_file":
             # ``apply`` is an internal execution flag and is intentionally not
             # exposed in the model-facing schema.
-            return tool(args["path"], args["old_str"], args["new_str"],
-                        apply=args.get("apply", True))
+            return tool(
+                args["path"], args["old_str"], args["new_str"],
+                apply=args.get("apply", True), approved_roots=approved_roots,
+            )
         if tool_name == "git_diff":
             return tool(
                 args.get("staged", False), args.get("path", ""),

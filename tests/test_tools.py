@@ -174,6 +174,24 @@ class ToolsTestCase(unittest.TestCase):
         with self.assertRaises(ValueError):
             tools.resolve_abs_path("../outside.txt")
 
+    def test_external_paths_require_explicit_approved_root(self):
+        outside = Path(tempfile.mkdtemp())
+        try:
+            external_file = outside / "notes.txt"
+            external_file.write_text("before", encoding="utf-8")
+            self.assertIn("escapes", tools.read_file(str(external_file))["error"])
+            approved = tools.read_file(str(external_file), approved_roots=(outside,))
+            self.assertEqual(approved["content"], "before")
+            edited = tools.edit_file(
+                str(external_file), "before", "after", approved_roots=(outside,)
+            )
+            self.assertEqual(external_file.read_text(encoding="utf-8"), "after")
+            self.assertTrue(Path(edited["backup_path"]).is_file())
+        finally:
+            for item in outside.iterdir():
+                item.unlink()
+            outside.rmdir()
+
     def test_resolve_abs_path_rejects_symlink_outside_workspace(self):
         outside = Path(tempfile.mkdtemp())
         try:

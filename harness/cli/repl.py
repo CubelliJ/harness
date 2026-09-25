@@ -50,7 +50,9 @@ from harness.cli.input import (
     _read_input,
     INPUT_MODE_SWITCH,
 )
-from harness.cli.confirmations import confirm_command, confirm_edit
+from harness.cli.confirmations import (
+    confirm_command, confirm_edit, confirm_external_access,
+)
 from harness.cli.presentation import (
     _banner,
     _format_tokens,
@@ -140,6 +142,8 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
     context_limit = get_model_context_length()
     workspace = config.workspace_root()
     mode_state = ModeState()
+    approved_read_roots: set[Path] = set()
+    approved_edit_roots: set[Path] = set()
     history_path = history_file_path()
     state_path = session_state_path(history_path)
     catalog_path = session_catalog_path(state_path)
@@ -324,7 +328,15 @@ def run_repl(initial_request: str = "", reload: bool = False) -> None:
                 pause_voice_session=pause_voice_session,
                 drain_pending_input=_drain_pending_input,
             ),
+            confirm_external_access=lambda directory, access: confirm_external_access(
+                directory,
+                access,
+                pause_voice_session=pause_voice_session,
+                drain_pending_input=_drain_pending_input,
+            ),
             confirm_mode=confirm_mode_switch,
+            approved_read_roots=approved_read_roots,
+            approved_edit_roots=approved_edit_roots,
             mode_changed=apply_mode,
             mode_state=mode_state,
             interruptible_call=_interruptible_call,
