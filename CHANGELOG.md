@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.39.0](https://github.com/CubelliJ/harness/compare/v0.38.0...v0.39.0) (2026-09-25)
+
+
+### Features
+
+* confirm access to external workspaces ([c5cdd8f](https://github.com/CubelliJ/harness/commit/c5cdd8f07a35cf6fbe421bf74efc8d3a01a9a96a))
+* confirm access to external workspaces ([6784dee](https://github.com/CubelliJ/harness/commit/6784dee0d1bb13cefe810c507cd1ee0ca41c9340))
+
 ## [0.38.0](https://github.com/CubelliJ/harness/compare/v0.37.1...v0.38.0) (2026-09-25)
 
 
