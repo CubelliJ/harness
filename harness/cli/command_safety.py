@@ -67,8 +67,8 @@ def _is_hard_risk(tokens: list[str]) -> bool:
         arg in {"-c", "-e", "--eval"} for arg in args
     ):
         return True
-    # Keep infrastructure and all shell-level Git operations on the approval
-    # path; options and wrappers make safe subcommand inference fragile.
+    # Keep infrastructure and shell-level Git operations on the approval
+    # path; command_may_auto_run has a narrow exception for simple feature-branch commits.
     if executable in {"terraform", "pulumi", "aws", "az", "gcloud", "kubectl", "helm", "git"}:
         return True
     # Catch destructive commands embedded after wrappers or command separators.
@@ -161,8 +161,35 @@ def classify_command(command: str) -> str:
         return "uncertain"
 
 
+def _is_feature_branch_commit(command: str) -> bool:
+    """Allow a plain commit on feature branches, but no other Git mutations."""
+    commands = _split_commands(command)
+    if not commands or len(commands) != 1:
+        return False
+    executable, args = _head(commands[0])
+    if executable != "git" or not args or args[0] != "commit":
+        return False
+
+    # Permit only a simple message and/or commit-all flag. This deliberately
+    # excludes amend, hooks bypass, arbitrary options, and path-limited commits.
+    index = 1
+    while index < len(args):
+        option = args[index]
+        if option in {"-a", "--all"}:
+            index += 1
+        elif option in {"-m", "--message"} and index + 1 < len(args) and args[index + 1]:
+            index += 2
+        else:
+            return False
+
+    in_git_repo, branch = git_context()
+    return in_git_repo and branch.startswith("feature/") and bool(branch[len("feature/"):])
+
+
 def command_may_auto_run(command: str, llm_classifier: Callable[[str], str] = classify_command) -> bool:
-    """Auto-run only deterministic safe commands or low-risk LLM classifications."""
+    """Auto-run safe validations, feature-branch commits, or low-risk classifications."""
+    if _is_feature_branch_commit(command):
+        return True
     risk = deterministic_command_risk(command)
     if _split_commands(command) is None:
         return False

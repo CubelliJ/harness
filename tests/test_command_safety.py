@@ -36,6 +36,27 @@ class CommandSafetyTests(unittest.TestCase):
                 self.assertEqual(deterministic_command_risk(command), "high")
                 self.assertFalse(command_may_auto_run(command, lambda _: "low"))
 
+    @patch("harness.cli.command_safety.git_context")
+    def test_plain_commit_auto_runs_only_on_feature_branches(self, git_context):
+        git_context.return_value = (True, "feature/safe-auto-workflows")
+        for command in ('git commit -m "feat: add workflow"', "git commit --all -m done"):
+            with self.subTest(command=command):
+                self.assertTrue(command_may_auto_run(command))
+
+        for command in (
+            "git commit --amend",
+            "git commit --no-verify -m done",
+            "git push origin feature/safe-auto-workflows",
+            "git commit -m done && git push",
+        ):
+            with self.subTest(command=command):
+                self.assertFalse(command_may_auto_run(command, lambda _: "low"))
+
+        git_context.return_value = (True, "develop")
+        self.assertFalse(command_may_auto_run("git commit -m done", lambda _: "low"))
+        git_context.return_value = (False, "")
+        self.assertFalse(command_may_auto_run("git commit -m done", lambda _: "low"))
+
     def test_ambiguous_command_uses_classifier_but_fails_closed(self):
         self.assertEqual(deterministic_command_risk("python -m hello_world"), "unknown")
         self.assertTrue(command_may_auto_run("python -m hello_world", lambda _: "low"))
