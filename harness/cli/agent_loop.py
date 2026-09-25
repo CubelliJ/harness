@@ -16,7 +16,7 @@ from harness.llm import execute_llm_call, parse_tool_call
 from harness.registry import execute_tool, format_tool_result_content
 from harness.terminal import MarkdownStreamRenderer, render_markdown
 from harness.cli.mode import ModeState, SessionMode
-from harness.cli.command_safety import command_may_auto_run, edits_may_auto_apply, git_context
+from harness.cli.command_safety import assess_command, edits_may_auto_apply, git_context
 
 
 Conversation = list[Dict[str, Any]]
@@ -213,12 +213,16 @@ def run_turn(
                     result = {"error": f"tool '{name}' is not available in Plan Mode"}
                 elif name == "run_command":
                     command = args.get("command", "")
-                    if command_may_auto_run(command):
+                    auto_run, assessment = assess_command(command)
+                    if auto_run:
+                        print(f"\033[90m   ├─ command safety · {assessment}\033[0m")
                         approved, feedback = True, ""
                     else:
+                        print(f"\033[90m   ├─ command safety · {assessment}; requesting approval\033[0m")
                         approved, feedback = confirm_command(command)
                     if approved:
                         result = interruptible_call(execute_tool, name, args)
+                        print(f"\033[90m   │ $ {command}\033[0m")
                     else:
                         result = {"action": "command_rejected"}
                         if feedback:

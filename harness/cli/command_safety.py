@@ -58,6 +58,28 @@ def _head(tokens: list[str]) -> tuple[str, list[str]]:
     return executable, tokens[index + 1:]
 
 
+def _is_read_only_git(tokens: list[str]) -> bool:
+    """Recognize Git inspection commands that may go through the classifier."""
+    executable, args = _head(tokens)
+    if executable != "git" or not args:
+        return False
+    subcommand = args[0]
+    if subcommand not in {
+        "diff", "status", "log", "show", "rev-parse", "ls-files",
+        "ls-tree", "cat-file", "describe", "grep",
+    }:
+        return False
+    # These options can write output or invoke external helpers, so keep them
+    # on the approval path rather than treating the command as inspection-only.
+    if subcommand == "diff" and any(
+        arg == "--output" or arg.startswith("--output=")
+        or arg in {"--ext-diff", "--textconv"}
+        for arg in args[1:]
+    ):
+        return False
+    return True
+
+
 def _is_hard_risk(tokens: list[str]) -> bool:
     executable, args = _head(tokens)
     lowered = [token.lower() for token in tokens]
@@ -69,7 +91,9 @@ def _is_hard_risk(tokens: list[str]) -> bool:
         return True
     # Keep infrastructure and shell-level Git operations on the approval
     # path; command_may_auto_run has a narrow exception for simple feature-branch commits.
-    if executable in {"terraform", "pulumi", "aws", "az", "gcloud", "kubectl", "helm", "git"}:
+    if executable in {"terraform", "pulumi", "aws", "az", "gcloud", "kubectl", "helm"}:
+        return True
+    if executable == "git" and not _is_read_only_git(tokens):
         return True
     # Catch destructive commands embedded after wrappers or command separators.
     if any(token in {"rm", "dd", "mkfs", "terraform", "pulumi"} for token in lowered):
@@ -105,6 +129,11 @@ def _is_known_validation(tokens: list[str]) -> bool:
     return executable in {"pytest", "unittest", "tox", "nox", "ruff", "black", "flake8", "mypy", "pyright", "isort", "coverage", "prettier", "eslint", "tsc"}
 
 
+def _contains_read_only_git_inspection(commands: list[list[str]]) -> bool:
+    """Identify Git-inspection commands that should always be classifier-reviewed."""
+    return any(_is_read_only_git(tokens) for tokens in commands)
+
+
 def deterministic_command_risk(command: str) -> str:
     """Return ``safe``, ``high``, or ``unknown`` from conservative local rules."""
     if re.search(r"\b(?:curl|wget)\b[^\n]*\|\s*(?:sudo\s+)?(?:sh|bash|zsh)\b", command):
@@ -114,6 +143,8 @@ def deterministic_command_risk(command: str) -> str:
         return "unknown"
     if any(_is_hard_risk(tokens) for tokens in commands):
         return "high"
+    if _contains_read_only_git_inspection(commands):
+        return "unknown"
     if all(_is_known_validation(tokens) for tokens in commands):
         return "safe"
     return "unknown"
@@ -128,7 +159,7 @@ def classify_command(command: str) -> str:
 
     model = safety_model()
     if not model:
-        return "uncertain"
+        raise RuntimeError("No safety classifier model is configured")
     import json
     import urllib.request
 
@@ -145,7 +176,7 @@ def classify_command(command: str) -> str:
             )},
             {"role": "user", "content": command[:4000]},
         ],
-        "tools": [], "tool_choice": "none", "max_tokens": 30, "stream": False,
+        "tools": [], "tool_choice": "none", "max_tokens": 200, "stream": False,
     }).encode()
     request = urllib.request.Request(
         active.chat_url, data=payload, method="POST", headers=active.headers()
@@ -153,12 +184,19 @@ def classify_command(command: str) -> str:
     try:
         with urllib.request.urlopen(request, timeout=min(active.timeout_s, 15)) as response:
             body = json.loads(response.read().decode("utf-8"))
-        content = body["choices"][0]["message"]["content"]
+        choice = body["choices"][0]
+        content = choice["message"]["content"]
+        if choice.get("finish_reason") == "length":
+            raise RuntimeError("Classifier response was truncated by the token limit")
         decoded = json.loads(content)
         risk = decoded.get("risk") if isinstance(decoded, dict) else None
-        return risk if risk in {"low", "high", "uncertain"} else "uncertain"
-    except Exception:
-        return "uncertain"
+        if risk not in {"low", "high", "uncertain"}:
+            raise RuntimeError("Classifier returned an invalid risk response")
+        return risk
+    except Exception as exc:
+        if isinstance(exc, RuntimeError) and str(exc).startswith("Classifier "):
+            raise
+        raise RuntimeError(f"Classifier request failed: {exc}") from exc
 
 
 def _is_feature_branch_commit(command: str) -> bool:
@@ -186,21 +224,37 @@ def _is_feature_branch_commit(command: str) -> bool:
     return in_git_repo and branch.startswith("feature/") and bool(branch[len("feature/"):])
 
 
+def assess_command(
+    command: str,
+    llm_classifier: Callable[[str], str] = classify_command,
+) -> tuple[bool, str]:
+    """Return whether a command may auto-run and how its risk was assessed."""
+    if _is_feature_branch_commit(command):
+        return True, "rule: simple commit on feature branch"
+    if _split_commands(command) is None:
+        return False, "rule: unsupported shell syntax"
+
+    risk = deterministic_command_risk(command)
+    if risk == "safe":
+        return True, "rule: known validation command"
+    if risk == "high":
+        return False, "rule: high-risk command"
+
+    try:
+        risk = llm_classifier(command)
+    except Exception as exc:
+        details = str(exc).replace("\n", " ")[:200] or type(exc).__name__
+        return False, f"classifier: error ({details})"
+    if risk == "low":
+        return True, "classifier: low risk"
+    if risk == "high":
+        return False, "classifier: high risk"
+    return False, "classifier: uncertain"
+
+
 def command_may_auto_run(command: str, llm_classifier: Callable[[str], str] = classify_command) -> bool:
     """Auto-run safe validations, feature-branch commits, or low-risk classifications."""
-    if _is_feature_branch_commit(command):
-        return True
-    risk = deterministic_command_risk(command)
-    if _split_commands(command) is None:
-        return False
-    if risk == "safe":
-        return True
-    if risk == "high":
-        return False
-    try:
-        return llm_classifier(command) == "low"
-    except Exception:
-        return False
+    return assess_command(command, llm_classifier)[0]
 
 
 def git_context() -> tuple[bool, str]:

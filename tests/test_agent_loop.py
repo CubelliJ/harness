@@ -261,7 +261,7 @@ class AgentLoopTestCase(unittest.TestCase):
             executed.append(args)
             return {"passed": True}
 
-        with redirect_stdout(io.StringIO()):
+        with redirect_stdout(io.StringIO()) as output:
             run_turn(
                 self.conversation,
                 session_auto_approve=False,
@@ -275,6 +275,8 @@ class AgentLoopTestCase(unittest.TestCase):
             )
         self.assertEqual(prompts, [])
         self.assertEqual(len(executed), 1)
+        self.assertIn("command safety · rule: known validation command", output.getvalue())
+        self.assertIn("$ python -m unittest", output.getvalue())
 
     def test_command_rejection_adds_feedback_without_running_tool(self):
         tool_call = {
