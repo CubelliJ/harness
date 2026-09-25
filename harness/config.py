@@ -1,9 +1,11 @@
 """Configuration for the active OpenAI-compatible backend."""
 
 import getpass
+import json
 import logging
 import os
 import sys
+import urllib.request
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -14,10 +16,13 @@ logger = logging.getLogger(__name__)
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_CHAT_URL = f"{OPENROUTER_BASE_URL}/chat/completions"
 OPENROUTER_MODELS_URL = f"{OPENROUTER_BASE_URL}/models"
-OPENROUTER_MODEL = "openai/gpt-5.6-luna"
+DEFAULT_MODEL = "openai/gpt-6-luna"
+FALLBACK_MODEL = "openai/gpt-5.6-luna"
+OPENROUTER_MODEL = DEFAULT_MODEL
 REQUEST_TIMEOUT_S = 600
 DEFAULT_AUTH_MODE = "bearer"
 DEFAULT_BACKEND_NAME = "OpenRouter"
+_resolved_default_models: dict[str, str] = {}
 
 
 @dataclass(frozen=True)
@@ -100,20 +105,53 @@ def _optional_rate(name: str) -> Optional[float]:
     return value
 
 
+def resolve_default_model(models_url: str, headers: dict[str, str], timeout_s: int = 3) -> str:
+    """Choose the preferred default when available, otherwise its fallback.
+
+    If model discovery is unavailable, retain the preferred default rather than
+    assuming it is absent. Results are cached per catalogue URL for this process.
+    """
+    if models_url in _resolved_default_models:
+        return _resolved_default_models[models_url]
+    try:
+        request = urllib.request.Request(models_url, headers=headers)
+        with urllib.request.urlopen(request, timeout=timeout_s) as response:
+            body = json.loads(response.read().decode("utf-8"))
+        if isinstance(body, dict) and isinstance(body.get("data"), list):
+            available = {
+                item.get("id") for item in body["data"]
+                if isinstance(item, dict) and isinstance(item.get("id"), str)
+            }
+            _resolved_default_models[models_url] = (
+                DEFAULT_MODEL if DEFAULT_MODEL in available else FALLBACK_MODEL
+            )
+    except Exception as exc:
+        logger.debug("Could not discover default model availability: %s", exc)
+        _resolved_default_models[models_url] = DEFAULT_MODEL
+    return _resolved_default_models.get(models_url, DEFAULT_MODEL)
+
+
 def backend_config() -> BackendConfig:
     """Resolve generic settings, falling back to the legacy OpenRouter preset."""
     base_url = os.environ.get("HARNESS_BASE_URL", OPENROUTER_BASE_URL).strip().rstrip("/")
     chat_url = os.environ.get("HARNESS_CHAT_URL", "").strip() or f"{base_url}/chat/completions"
     models_url = os.environ.get("HARNESS_MODELS_URL", "").strip() or f"{base_url}/models"
     model = os.environ.get("HARNESS_MODEL", "").strip()
-    if not model:
-        model = os.environ.get("OPENROUTER_MODEL", OPENROUTER_MODEL).strip() or OPENROUTER_MODEL
     api_key = os.environ.get("HARNESS_API_KEY", "").strip()
     if not api_key:
         api_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
     auth_mode = os.environ.get("HARNESS_AUTH_MODE", DEFAULT_AUTH_MODE).strip().lower() or DEFAULT_AUTH_MODE
     if auth_mode not in {"none", "bearer"}:
         raise ValueError("HARNESS_AUTH_MODE must be one of: none, bearer")
+    if not model:
+        legacy_model = os.environ.get("OPENROUTER_MODEL", "").strip()
+        if legacy_model:
+            model = legacy_model
+        else:
+            discovery_headers = {"Content-Type": "application/json"}
+            if auth_mode == "bearer" and api_key:
+                discovery_headers["Authorization"] = f"Bearer {api_key}"
+            model = resolve_default_model(models_url, discovery_headers)
     try:
         timeout_s = int(os.environ.get("HARNESS_REQUEST_TIMEOUT_S", REQUEST_TIMEOUT_S))
     except ValueError as exc:
@@ -238,6 +276,18 @@ def auto_approve() -> bool:
     return os.environ.get("HARNESS_AUTO_APPROVE", "").strip().lower() in {
         "1", "true", "yes", "on"
     }
+
+
+def safety_model() -> str:
+    """Return an explicit classifier model or the resolved Harness default."""
+    configured = os.environ.get("HARNESS_SAFETY_MODEL", "").strip()
+    if configured:
+        return configured
+    active = backend_config()
+    headers = {"Content-Type": "application/json"}
+    if active.auth_mode == "bearer" and active.api_key:
+        headers["Authorization"] = f"Bearer {active.api_key}"
+    return resolve_default_model(active.models_url, headers)
 
 
 def dry_run() -> bool:

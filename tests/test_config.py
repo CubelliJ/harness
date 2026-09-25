@@ -1,4 +1,6 @@
 """Tests for workspace-level default model persistence."""
+import io
+import json
 import os
 import tempfile
 import unittest
@@ -13,6 +15,31 @@ class BackendConfigTests(unittest.TestCase):
         self.env = patch.dict(os.environ, {}, clear=True)
         self.env.start()
         self.addCleanup(self.env.stop)
+
+    def test_defaults_to_preferred_model_when_catalogue_lists_it(self):
+        body = {"data": [{"id": "openai/gpt-6-luna"}, {"id": "openai/gpt-5.6-luna"}]}
+        config._resolved_default_models.clear()
+        with patch("urllib.request.urlopen", return_value=io.BytesIO(json.dumps(body).encode())):
+            self.assertEqual(config.backend_config().model, "openai/gpt-6-luna")
+
+    def test_defaults_to_fallback_when_preferred_model_is_unavailable(self):
+        body = {"data": [{"id": "openai/gpt-5.6-luna"}]}
+        config._resolved_default_models.clear()
+        with patch("urllib.request.urlopen", return_value=io.BytesIO(json.dumps(body).encode())):
+            self.assertEqual(config.backend_config().model, "openai/gpt-5.6-luna")
+
+    def test_model_catalogue_failure_uses_preferred_default(self):
+        config._resolved_default_models.clear()
+        with patch("urllib.request.urlopen", side_effect=OSError("offline")):
+            self.assertEqual(config.backend_config().model, "openai/gpt-6-luna")
+
+    def test_safety_model_defaults_to_resolved_model_and_accepts_override(self):
+        body = {"data": [{"id": "openai/gpt-5.6-luna"}]}
+        config._resolved_default_models.clear()
+        with patch("urllib.request.urlopen", return_value=io.BytesIO(json.dumps(body).encode())):
+            self.assertEqual(config.safety_model(), "openai/gpt-5.6-luna")
+        os.environ["HARNESS_SAFETY_MODEL"] = "custom/safety"
+        self.assertEqual(config.safety_model(), "custom/safety")
 
     def test_generic_urls_are_derived_and_trailing_slash_is_removed(self):
         os.environ.update({
