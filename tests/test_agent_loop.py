@@ -246,6 +246,36 @@ class AgentLoopTestCase(unittest.TestCase):
             )
         self.assertIn("not available in Plan Mode", self.conversation[2]["content"])
 
+    def test_safe_validation_command_skips_confirmation(self):
+        tool_call = {
+            "id": "test-1",
+            "function": {"name": "run_command", "arguments": '{"command":"python -m unittest"}'},
+        }
+        prompts = []
+        executed = []
+        responses = iter([(None, [tool_call], {}), ("Done", [], {})])
+
+        def interruptible(function, *args, **kwargs):
+            if function.__name__ == "execute_llm_call":
+                return next(responses)
+            executed.append(args)
+            return {"passed": True}
+
+        with redirect_stdout(io.StringIO()):
+            run_turn(
+                self.conversation,
+                session_auto_approve=False,
+                compact=lambda: False,
+                persist=lambda: None,
+                maybe_generate_title=lambda: None,
+                confirm_command=lambda command: prompts.append(command) or (False, ""),
+                confirm_edit=lambda result: (True, ""),
+                interruptible_call=interruptible,
+                update_tokens=lambda _: None,
+            )
+        self.assertEqual(prompts, [])
+        self.assertEqual(len(executed), 1)
+
     def test_command_rejection_adds_feedback_without_running_tool(self):
         tool_call = {
             "id": "call-1",

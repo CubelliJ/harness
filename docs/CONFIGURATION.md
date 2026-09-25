@@ -33,7 +33,8 @@ python -m harness configure
 | `HARNESS_CHAT_URL` | `<base>/chat/completions` | Chat completion URL override |
 | `HARNESS_MODELS_URL` | `<base>/models` | Model catalogue URL override |
 | `HARNESS_API_KEY` | legacy key fallback | API key for bearer authentication |
-| `HARNESS_MODEL` | OpenRouter compatibility model | Active model; saved selections use this variable |
+| `HARNESS_MODEL` | `openai/gpt-6-luna` (`openai/gpt-5.6-luna` if unavailable) | Active model; saved selections and explicit environment values override the default |
+| `HARNESS_SAFETY_MODEL` | `openai/gpt-6-luna` (`openai/gpt-5.6-luna` if unavailable) | Optional model override for ambiguous shell-command risk checks; failures fall back to asking for approval |
 | `HARNESS_AUTH_MODE` | `bearer` | `none` or `bearer`; bearer requires a key |
 | `HARNESS_REQUEST_TIMEOUT_S` | `600` | Request timeout in seconds |
 | `HARNESS_BACKEND_NAME` | `OpenRouter` | Display name used in CLI and errors |

@@ -16,6 +16,7 @@ from harness.llm import execute_llm_call, parse_tool_call
 from harness.registry import execute_tool, format_tool_result_content
 from harness.terminal import MarkdownStreamRenderer, render_markdown
 from harness.cli.mode import ModeState, SessionMode
+from harness.cli.command_safety import command_may_auto_run, edits_may_auto_apply, git_context
 
 
 Conversation = list[Dict[str, Any]]
@@ -211,7 +212,11 @@ def run_turn(
                 elif not mode_state.allows_tool(name):
                     result = {"error": f"tool '{name}' is not available in Plan Mode"}
                 elif name == "run_command":
-                    approved, feedback = confirm_command(args.get("command", ""))
+                    command = args.get("command", "")
+                    if command_may_auto_run(command):
+                        approved, feedback = True, ""
+                    else:
+                        approved, feedback = confirm_command(command)
                     if approved:
                         result = interruptible_call(execute_tool, name, args)
                     else:
@@ -227,21 +232,28 @@ def run_turn(
                     if not result.get("error") and result.get("action") != "old_str not found":
                         if config.dry_run():
                             result["action"] = "dry_run"
-                        elif session_auto_approve:
-                            result = interruptible_call(
-                                execute_tool, name, dict(args, apply=True)
-                            )
                         else:
-                            approved, feedback = confirm_edit(result)
-                            if approved:
+                            in_git_repo, branch = git_context()
+                            auto_apply = edits_may_auto_apply(
+                                in_git_repo=in_git_repo,
+                                branch=branch,
+                                explicit_auto_accept=session_auto_approve,
+                            )
+                            if auto_apply:
                                 result = interruptible_call(
                                     execute_tool, name, dict(args, apply=True)
                                 )
                             else:
-                                result["action"] = "edit_rejected"
-                                result.pop("diff", None)
-                                if feedback:
-                                    result["feedback"] = feedback
+                                approved, feedback = confirm_edit(result)
+                                if approved:
+                                    result = interruptible_call(
+                                        execute_tool, name, dict(args, apply=True)
+                                    )
+                                else:
+                                    result["action"] = "edit_rejected"
+                                    result.pop("diff", None)
+                                    if feedback:
+                                        result["feedback"] = feedback
                 else:
                     result = interruptible_call(execute_tool, name, args)
 
