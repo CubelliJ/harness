@@ -391,7 +391,7 @@ class AgentLoopTestCase(unittest.TestCase):
             )
         self.assertIn("not available in Plan Mode", self.conversation[2]["content"])
 
-    def test_safe_validation_command_skips_confirmation(self):
+    def test_classifier_low_risk_command_skips_confirmation(self):
         tool_call = {
             "id": "test-1",
             "function": {"name": "run_command", "arguments": '{"command":"python -m unittest"}'},
@@ -420,7 +420,7 @@ class AgentLoopTestCase(unittest.TestCase):
             )
         self.assertEqual(prompts, [])
         self.assertEqual(len(executed), 1)
-        self.assertIn("command safety · rule: known validation command", output.getvalue())
+        self.assertIn("command safety · classifier: low risk", output.getvalue())
         self.assertIn("$ python -m unittest", output.getvalue())
 
     def test_command_rejection_adds_feedback_without_running_tool(self):
