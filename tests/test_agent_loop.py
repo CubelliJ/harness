@@ -406,7 +406,10 @@ class AgentLoopTestCase(unittest.TestCase):
             executed.append(args)
             return {"passed": True}
 
-        with redirect_stdout(io.StringIO()) as output:
+        with patch(
+            "harness.cli.agent_loop.assess_command",
+            return_value=(True, "classifier: low risk"),
+        ) as assess, redirect_stdout(io.StringIO()) as output:
             run_turn(
                 self.conversation,
                 session_auto_approve=False,
@@ -418,6 +421,7 @@ class AgentLoopTestCase(unittest.TestCase):
                 interruptible_call=interruptible,
                 update_tokens=lambda _: None,
             )
+        assess.assert_called_once_with("python -m unittest")
         self.assertEqual(prompts, [])
         self.assertEqual(len(executed), 1)
         self.assertIn("command safety · classifier: low risk", output.getvalue())
