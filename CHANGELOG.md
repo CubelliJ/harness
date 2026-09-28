@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.40.0](https://github.com/CubelliJ/harness/compare/v0.39.0...v0.40.0) (2026-09-28)
+
+
+### Features
+
+* classify command safety before auto-run ([8037ab6](https://github.com/CubelliJ/harness/commit/8037ab64245e106d2a98278aebf671b0c68a77c2))
+* classify command safety before auto-run ([a08591e](https://github.com/CubelliJ/harness/commit/a08591edb11ca42cfb918cfec5466752a37108a5))
+
 ## [0.39.0](https://github.com/CubelliJ/harness/compare/v0.38.0...v0.39.0) (2026-09-25)
 
 
