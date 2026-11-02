@@ -236,6 +236,19 @@ class ToolsTestCase(unittest.TestCase):
         self.assertNotIn("error", result)
         self.assertEqual({item["filename"] for item in result["files"]}, {"a.txt", "b.txt"})
 
+    def test_search_files_result_includes_resolved_path(self):
+        (self.workspace / "notes.txt").write_text("needle\n", encoding="utf-8")
+        result = tools.search_files("needle", ".")
+        self.assertNotIn("error", result)
+        self.assertEqual(result["path"], str(self.workspace.resolve()))
+
+    def test_search_files_truncated_result_includes_resolved_path(self):
+        (self.workspace / "a.txt").write_text("needle\n", encoding="utf-8")
+        (self.workspace / "b.txt").write_text("needle\n", encoding="utf-8")
+        result = tools.search_files("needle", ".", max_results=1)
+        self.assertTrue(result["truncated"])
+        self.assertEqual(result["path"], str(self.workspace.resolve()))
+
     def test_edit_preview_replaces_only_first_match(self):
         path = self.workspace / "example.txt"
         path.write_text("one\none\n", encoding="utf-8")
