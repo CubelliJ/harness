@@ -235,10 +235,15 @@ def search_files(
                     matches.append({"file": relative.as_posix(), "line": line_number,
                                     "text": line.rstrip("\n\r")})
                     if len(matches) >= max_results:
-                        return {"query": query, "matches": matches, "truncated": True}
+                        return {
+                            "query": query, "path": str(root),
+                            "matches": matches, "truncated": True,
+                        }
         except (OSError, UnicodeDecodeError):
             continue
-    return {"query": query, "matches": matches, "truncated": False}
+    return {
+        "query": query, "path": str(root), "matches": matches, "truncated": False,
+    }
 
 
 
