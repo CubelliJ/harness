@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.42.1](https://github.com/CubelliJ/harness/compare/v0.42.0...v0.42.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* **deps:** update setuptools requirement from &gt;=84.0.0 to &gt;=84.2.1 ([fa6e918](https://github.com/CubelliJ/harness/commit/fa6e918d8714ecdf36b2e99b9aaf32221bd9388c))
+* **deps:** update setuptools requirement from &gt;=84.0.0 to &gt;=84.2.1 ([a9e52c8](https://github.com/CubelliJ/harness/commit/a9e52c872aa13346c0a34937a31159c8cd830cab))
+
 ## [0.42.0](https://github.com/CubelliJ/harness/compare/v0.41.1...v0.42.0) (2026-11-02)
 
 
