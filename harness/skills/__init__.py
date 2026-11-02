@@ -31,6 +31,13 @@ class SkillSource:
 
 
 _BUILTIN_SKILLS = Path(__file__).resolve().parent
+_WORKSPACE_SKILL_DIRS = (
+    ".harness/skills",
+    ".agents/skills",
+    ".claude/skills",
+    ".cursor/skills",
+    ".codex/skills",
+)
 
 
 def parse_skill_references(agents_content: str) -> List[SkillReference]:
@@ -95,7 +102,11 @@ def _directory_sources(root: Path, origin: str) -> List[SkillSource]:
 def skill_sources(workspace: Path = None) -> List[SkillSource]:
     """Discover workspace, user, and installed skills by precedence."""
     root = (workspace or workspace_root()).expanduser().resolve()
-    sources = _directory_sources(root / ".harness" / "skills", "workspace")
+    sources = [
+        source
+        for relative_path in _WORKSPACE_SKILL_DIRS
+        for source in _directory_sources(root / relative_path, "workspace")
+    ]
     references = skill_references(root)
     for reference in references:
         try:
