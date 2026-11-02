@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.42.2](https://github.com/CubelliJ/harness/compare/v0.42.1...v0.42.2) (2026-11-02)
+
+
+### Bug Fixes
+
+* **deps:** bump actions/setup-python from 7.0.0 to 7.1.0 ([8f1fd5f](https://github.com/CubelliJ/harness/commit/8f1fd5fcf9132fe68a9ce82dee19abc4836dc089))
+
 ## [0.42.1](https://github.com/CubelliJ/harness/compare/v0.42.0...v0.42.1) (2026-11-02)
 
 
