@@ -164,6 +164,20 @@ class AgentLoopTestCase(unittest.TestCase):
         self.assertEqual(len(provider_messages), 2)
         self.assertEqual(provider_messages[1][-1]["role"], "system")
 
+    def test_edit_file_status_shows_edited_path(self):
+        output = self._run(
+            [
+                (None, [{
+                    "id": "edit-1",
+                    "function": {"name": "edit_file", "arguments": "{}"},
+                }], {}),
+                ("Done", [], {}),
+            ],
+            tool_results={"edit_file": {"action": "edited", "path": "harness/cli/repl.py"}},
+        )
+        self.assertIn("edit_file", output)
+        self.assertIn("edited harness/cli/repl.py", output)
+
     def test_plain_response_updates_conversation_and_usage(self):
         output = self._run([("Hello", [], {"prompt_tokens": 12})])
         self.assertEqual(self.conversation[-1]["role"], "assistant")

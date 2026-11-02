@@ -332,6 +332,8 @@ def run_turn(
 
             summary = (result.get("error") or result.get("action") or
                        result.get("path") or result.get("file_path") or "ok")
+            if name == "edit_file" and not result.get("error") and result.get("path"):
+                summary = f"{summary} {result['path']}"
             print(_tool_status(name, summary))
             preview = _tool_output_preview(name, result)
             if preview:
