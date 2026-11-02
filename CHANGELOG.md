@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.41.1](https://github.com/CubelliJ/harness/compare/v0.41.0...v0.41.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* show edited file paths in tool status ([addbb7d](https://github.com/CubelliJ/harness/commit/addbb7d320d2802dac9c96b28d7ea7b705d60192))
+* show edited file paths in tool status ([7bc8f75](https://github.com/CubelliJ/harness/commit/7bc8f75f4a44f21d35332249d001c45a4d2484b8))
+
 ## [0.41.0](https://github.com/CubelliJ/harness/compare/v0.40.0...v0.41.0) (2026-11-02)
 
 
