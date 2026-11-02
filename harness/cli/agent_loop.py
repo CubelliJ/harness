@@ -332,6 +332,17 @@ def run_turn(
 
             summary = (result.get("error") or result.get("action") or
                        result.get("path") or result.get("file_path") or "ok")
+            if name == "edit_file" and not result.get("error") and result.get("path"):
+                summary = f"{summary} {result['path']}"
+            elif not result.get("error") and name == "search_files":
+                query = args.get("query", result.get("query", ""))
+                path = result.get("path", args.get("path", "."))
+                glob = args.get("glob", "*")
+                summary = f"{query!r} in {path}"
+                if glob != "*":
+                    summary += f" ({glob})"
+            elif not result.get("error") and name == "list_files":
+                summary = result.get("path", args.get("path", "."))
             print(_tool_status(name, summary))
             preview = _tool_output_preview(name, result)
             if preview:

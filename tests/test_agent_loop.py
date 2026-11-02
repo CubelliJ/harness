@@ -164,6 +164,55 @@ class AgentLoopTestCase(unittest.TestCase):
         self.assertEqual(len(provider_messages), 2)
         self.assertEqual(provider_messages[1][-1]["role"], "system")
 
+    def test_edit_file_status_shows_edited_path(self):
+        output = self._run(
+            [
+                (None, [{
+                    "id": "edit-1",
+                    "function": {"name": "edit_file", "arguments": "{}"},
+                }], {}),
+                ("Done", [], {}),
+            ],
+            tool_results={"edit_file": {"action": "edited", "path": "harness/cli/repl.py"}},
+        )
+        self.assertIn("edit_file", output)
+        self.assertIn("edited harness/cli/repl.py", output)
+
+    def test_search_files_status_shows_query_path_and_custom_glob(self):
+        output = self._run(
+            [
+                (None, [{
+                    "id": "search-1",
+                    "function": {
+                        "name": "search_files",
+                        "arguments": '{"query":"needle","path":"harness","glob":"*.py"}',
+                    },
+                }], {}),
+                ("Done", [], {}),
+            ],
+            tool_results={
+                "search_files": {
+                    "query": "needle", "path": "/workspace/harness",
+                    "matches": [], "truncated": False,
+                }
+            },
+        )
+        self.assertIn("'needle' in /workspace/harness (*.py)", output)
+
+    def test_list_files_status_shows_directory(self):
+        output = self._run(
+            [
+                (None, [{
+                    "id": "list-1",
+                    "function": {"name": "list_files", "arguments": '{"path":"harness"}'},
+                }], {}),
+                ("Done", [], {}),
+            ],
+            tool_results={"list_files": {"path": "/workspace/harness", "files": []}},
+        )
+        self.assertIn("list_files", output)
+        self.assertIn("/workspace/harness", output)
+
     def test_plain_response_updates_conversation_and_usage(self):
         output = self._run([("Hello", [], {"prompt_tokens": 12})])
         self.assertEqual(self.conversation[-1]["role"], "assistant")
