@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.41.0](https://github.com/CubelliJ/harness/compare/v0.40.0...v0.41.0) (2026-11-02)
+
+
+### Features
+
+* discover skills from agent tool directories ([d0b2c4b](https://github.com/CubelliJ/harness/commit/d0b2c4ba6ac60910d02d46c3b80c93ff06d555f6))
+* discover skills from agent tool directories ([6df017c](https://github.com/CubelliJ/harness/commit/6df017c06a3ff58791c2375a2b61756f6f3c61dc))
+
+## [0.40.0](https://github.com/CubelliJ/harness/compare/v0.39.0...v0.40.0) (2026-09-28)
+
+
+### Features
+
+* classify command safety before auto-run ([8037ab6](https://github.com/CubelliJ/harness/commit/8037ab64245e106d2a98278aebf671b0c68a77c2))
+* classify command safety before auto-run ([a08591e](https://github.com/CubelliJ/harness/commit/a08591edb11ca42cfb918cfec5466752a37108a5))
+
+## [0.39.0](https://github.com/CubelliJ/harness/compare/v0.38.0...v0.39.0) (2026-09-25)
+
+
+### Features
+
+* confirm access to external workspaces ([c5cdd8f](https://github.com/CubelliJ/harness/commit/c5cdd8f07a35cf6fbe421bf74efc8d3a01a9a96a))
+* confirm access to external workspaces ([6784dee](https://github.com/CubelliJ/harness/commit/6784dee0d1bb13cefe810c507cd1ee0ca41c9340))
+
 ## [0.38.0](https://github.com/CubelliJ/harness/compare/v0.37.1...v0.38.0) (2026-09-25)
 
 

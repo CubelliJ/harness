@@ -118,6 +118,33 @@ class ToolsTestCase(unittest.TestCase):
         result = load_skill("local-only", self.workspace)
         self.assertEqual(result["content"], "workspace skill")
 
+    def test_agent_tool_skills_are_discovered_automatically(self):
+        for tool_dir in (".agents", ".claude", ".cursor", ".codex"):
+            with self.subTest(tool_dir=tool_dir):
+                skill_dir = self.workspace / tool_dir / "skills" / f"{tool_dir[1:]}-skill"
+                skill_dir.mkdir(parents=True)
+                (skill_dir / "SKILL.md").write_text(f"from {tool_dir}", encoding="utf-8")
+
+        sources = skill_sources(self.workspace)
+        discovered = {source.name: source for source in sources}
+        for tool_dir in (".agents", ".claude", ".cursor", ".codex"):
+            name = f"{tool_dir[1:]}-skill"
+            with self.subTest(tool_dir=tool_dir):
+                self.assertEqual(discovered[name].origin, "workspace")
+                self.assertEqual(
+                    load_skill(name, self.workspace)["content"], f"from {tool_dir}"
+                )
+
+    def test_workspace_skill_directories_use_harness_first_precedence(self):
+        harness_skill = self.workspace / ".harness" / "skills" / "shared"
+        claude_skill = self.workspace / ".claude" / "skills" / "shared"
+        harness_skill.mkdir(parents=True)
+        claude_skill.mkdir(parents=True)
+        (harness_skill / "SKILL.md").write_text("harness", encoding="utf-8")
+        (claude_skill / "SKILL.md").write_text("claude", encoding="utf-8")
+
+        self.assertEqual(load_skill("shared", self.workspace)["content"], "harness")
+
     def test_skill_sources_use_workspace_user_installation_precedence(self):
         user_root = self.workspace / "user-skills"
         user_skill = user_root / "shared"
@@ -173,6 +200,24 @@ class ToolsTestCase(unittest.TestCase):
     def test_resolve_abs_path_rejects_traversal(self):
         with self.assertRaises(ValueError):
             tools.resolve_abs_path("../outside.txt")
+
+    def test_external_paths_require_explicit_approved_root(self):
+        outside = Path(tempfile.mkdtemp())
+        try:
+            external_file = outside / "notes.txt"
+            external_file.write_text("before", encoding="utf-8")
+            self.assertIn("escapes", tools.read_file(str(external_file))["error"])
+            approved = tools.read_file(str(external_file), approved_roots=(outside,))
+            self.assertEqual(approved["content"], "before")
+            edited = tools.edit_file(
+                str(external_file), "before", "after", approved_roots=(outside,)
+            )
+            self.assertEqual(external_file.read_text(encoding="utf-8"), "after")
+            self.assertTrue(Path(edited["backup_path"]).is_file())
+        finally:
+            for item in outside.iterdir():
+                item.unlink()
+            outside.rmdir()
 
     def test_resolve_abs_path_rejects_symlink_outside_workspace(self):
         outside = Path(tempfile.mkdtemp())

@@ -1,6 +1,9 @@
 import io
+import tempfile
 import unittest
 from contextlib import redirect_stdout
+from pathlib import Path
+from unittest.mock import patch
 
 from harness.cli.agent_loop import (
     _append_interrupted_tool_results,
@@ -193,6 +196,148 @@ class AgentLoopTestCase(unittest.TestCase):
             )
         self.assertEqual(output.getvalue().count("Hello"), 1)
 
+    def test_external_read_requires_approval_and_then_uses_session_allowlist(self):
+        with tempfile.TemporaryDirectory() as workspace, tempfile.TemporaryDirectory() as outside:
+            file_path = Path(outside) / "notes.txt"
+            file_path.write_text("private", encoding="utf-8")
+            tool_call = {
+                "id": "external-read",
+                "function": {
+                    "name": "read_file",
+                    "arguments": '{"filename": "%s"}' % file_path,
+                },
+            }
+            confirmations = []
+            executions = []
+            responses = iter([
+                (None, [tool_call], {}),
+                (None, [tool_call], {}),
+                ("Done", [], {}),
+            ])
+
+            def interruptible(function, *args, **kwargs):
+                if function.__name__ == "execute_llm_call":
+                    return next(responses)
+                executions.append((args, kwargs))
+                return {"file_path": str(file_path), "content": "private"}
+
+            with patch("harness.config.workspace_root", return_value=Path(workspace)):
+                with redirect_stdout(io.StringIO()):
+                    run_turn(
+                        self.conversation,
+                        session_auto_approve=False,
+                        compact=lambda: False,
+                        persist=lambda: None,
+                        maybe_generate_title=lambda: None,
+                        confirm_command=lambda _: (True, ""),
+                        confirm_edit=lambda _: (True, ""),
+                        confirm_external_access=lambda directory, access: (
+                            confirmations.append((directory, access)) or True
+                        ),
+                        interruptible_call=interruptible,
+                        update_tokens=lambda _: None,
+                    )
+
+            self.assertEqual(len(confirmations), 1)
+            self.assertEqual(confirmations[0][1], "read")
+            self.assertEqual(len(executions), 2)
+            self.assertEqual(
+                tuple(Path(root).resolve() for root in executions[0][1]["approved_roots"]),
+                (Path(outside).resolve(),),
+            )
+            self.assertEqual(
+                tuple(Path(root).resolve() for root in executions[1][1]["approved_roots"]),
+                (Path(outside).resolve(),),
+            )
+
+    def test_external_edit_requires_access_and_diff_confirmations(self):
+        with tempfile.TemporaryDirectory() as workspace, tempfile.TemporaryDirectory() as outside:
+            file_path = Path(outside) / "notes.txt"
+            tool_call = {
+                "id": "external-edit",
+                "function": {
+                    "name": "edit_file",
+                    "arguments": '{"path": "%s", "old_str": "before", "new_str": "after"}'
+                    % file_path,
+                },
+            }
+            responses = iter([(None, [tool_call], {}), ("Done", [], {})])
+            access_prompts = []
+            edit_prompts = []
+            executions = []
+
+            def interruptible(function, *args, **kwargs):
+                if function.__name__ == "execute_llm_call":
+                    return next(responses)
+                executions.append((args, kwargs))
+                if args[1].get("apply") is False:
+                    return {"path": str(file_path), "action": "edited", "diff": "diff"}
+                return {"path": str(file_path), "action": "edited"}
+
+            with patch("harness.config.workspace_root", return_value=Path(workspace)):
+                with patch("harness.cli.agent_loop.git_context", return_value=(True, "feature/x")):
+                    with redirect_stdout(io.StringIO()):
+                        run_turn(
+                            self.conversation,
+                            session_auto_approve=True,
+                            compact=lambda: False,
+                            persist=lambda: None,
+                            maybe_generate_title=lambda: None,
+                            confirm_command=lambda _: (True, ""),
+                            confirm_edit=lambda result: (
+                                edit_prompts.append(result) or (True, "")
+                            ),
+                            confirm_external_access=lambda directory, access: (
+                                access_prompts.append((directory, access)) or True
+                            ),
+                            interruptible_call=interruptible,
+                            update_tokens=lambda _: None,
+                        )
+
+            self.assertEqual(len(access_prompts), 1)
+            self.assertEqual(access_prompts[0][1], "edit")
+            self.assertEqual(len(edit_prompts), 1)
+            self.assertEqual(edit_prompts[0]["diff"], "diff")
+            self.assertEqual(len(executions), 2)
+            self.assertTrue(executions[0][1]["approved_roots"])
+            self.assertTrue(executions[1][1]["approved_roots"])
+
+    def test_external_read_rejection_does_not_run_tool(self):
+        with tempfile.TemporaryDirectory() as workspace, tempfile.TemporaryDirectory() as outside:
+            file_path = Path(outside) / "notes.txt"
+            tool_call = {
+                "id": "external-read",
+                "function": {
+                    "name": "read_file",
+                    "arguments": '{"filename": "%s"}' % file_path,
+                },
+            }
+            responses = iter([(None, [tool_call], {}), ("Done", [], {})])
+            executed = []
+
+            def interruptible(function, *args, **kwargs):
+                if function.__name__ == "execute_llm_call":
+                    return next(responses)
+                executed.append(args)
+                return {}
+
+            with patch("harness.config.workspace_root", return_value=Path(workspace)):
+                with redirect_stdout(io.StringIO()):
+                    run_turn(
+                        self.conversation,
+                        session_auto_approve=False,
+                        compact=lambda: False,
+                        persist=lambda: None,
+                        maybe_generate_title=lambda: None,
+                        confirm_command=lambda _: (True, ""),
+                        confirm_edit=lambda _: (True, ""),
+                        confirm_external_access=lambda *_: False,
+                        interruptible_call=interruptible,
+                        update_tokens=lambda _: None,
+                    )
+            self.assertEqual(executed, [])
+            self.assertIn("not approved", self.conversation[2]["content"])
+
     def test_tool_turn_executes_tool_then_continues_to_final_response(self):
         tool_call = {
             "id": "call-1",
@@ -246,7 +391,7 @@ class AgentLoopTestCase(unittest.TestCase):
             )
         self.assertIn("not available in Plan Mode", self.conversation[2]["content"])
 
-    def test_safe_validation_command_skips_confirmation(self):
+    def test_classifier_low_risk_command_skips_confirmation(self):
         tool_call = {
             "id": "test-1",
             "function": {"name": "run_command", "arguments": '{"command":"python -m unittest"}'},
@@ -261,7 +406,10 @@ class AgentLoopTestCase(unittest.TestCase):
             executed.append(args)
             return {"passed": True}
 
-        with redirect_stdout(io.StringIO()) as output:
+        with patch(
+            "harness.cli.agent_loop.assess_command",
+            return_value=(True, "classifier: low risk"),
+        ) as assess, redirect_stdout(io.StringIO()) as output:
             run_turn(
                 self.conversation,
                 session_auto_approve=False,
@@ -273,9 +421,10 @@ class AgentLoopTestCase(unittest.TestCase):
                 interruptible_call=interruptible,
                 update_tokens=lambda _: None,
             )
+        assess.assert_called_once_with("python -m unittest")
         self.assertEqual(prompts, [])
         self.assertEqual(len(executed), 1)
-        self.assertIn("command safety · rule: known validation command", output.getvalue())
+        self.assertIn("command safety · classifier: low risk", output.getvalue())
         self.assertIn("$ python -m unittest", output.getvalue())
 
     def test_command_rejection_adds_feedback_without_running_tool(self):

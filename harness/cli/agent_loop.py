@@ -2,6 +2,7 @@
 
 import json
 import sys
+from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
 from harness import config
@@ -25,11 +26,20 @@ Persist = Callable[[], None]
 Compact = Callable[..., bool]
 ConfirmCommand = Callable[[str], tuple[bool, str]]
 ConfirmEdit = Callable[[Dict[str, Any]], tuple[bool, str]]
+ConfirmExternalAccess = Callable[[str, str], bool]
 ConfirmMode = Callable[[str], bool]
 ModeChanged = Callable[[SessionMode], None]
 UpdateTokens = Callable[[Optional[int]], None]
 ContextCheckpoint = Callable[[], bool]
 GenerateTitle = Callable[[], None]
+
+
+def _path_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
 
 
 def _append_interrupted_tool_results(conversation: Conversation) -> None:
@@ -105,6 +115,9 @@ def run_turn(
     confirm_edit: ConfirmEdit,
     interruptible_call: InterruptibleCall,
     update_tokens: UpdateTokens,
+    confirm_external_access: Optional[ConfirmExternalAccess] = None,
+    approved_read_roots: Optional[set[Path]] = None,
+    approved_edit_roots: Optional[set[Path]] = None,
     context_checkpoint: Optional[ContextCheckpoint] = None,
     confirm_mode: Optional[ConfirmMode] = None,
     mode_state: Optional[ModeState] = None,
@@ -112,6 +125,9 @@ def run_turn(
 ) -> None:
     """Run provider responses and tool calls until the assistant answers."""
     confirm_mode = confirm_mode or (lambda requested: False)
+    confirm_external_access = confirm_external_access or (lambda directory, access: False)
+    approved_read_roots = approved_read_roots if approved_read_roots is not None else set()
+    approved_edit_roots = approved_edit_roots if approved_edit_roots is not None else set()
     mode_state = mode_state or ModeState()
     mode_changed = mode_changed or (lambda mode: None)
     while True:
@@ -195,7 +211,51 @@ def run_turn(
                 args = {}
                 result = {"error": str(exc)}
             else:
-                if preflight_error:
+                external_access_denied = False
+                external_path_requested = False
+                tool_path_key = {
+                    "read_file": "filename", "read_image": "filename",
+                    "list_files": "path", "search_files": "path", "edit_file": "path",
+                }.get(name)
+                tool_approved_roots = ()
+                if (
+                    tool_path_key is not None
+                    and mode_state.allows_tool(name)
+                    and not preflight_error
+                ):
+                    requested_path = Path(str(args.get(tool_path_key, "."))).expanduser()
+                    workspace_root = config.workspace_root().expanduser().resolve()
+                    if not requested_path.is_absolute():
+                        requested_path = workspace_root / requested_path
+                    requested_path = requested_path.resolve(strict=False)
+                    try:
+                        requested_path.relative_to(workspace_root)
+                    except ValueError:
+                        external_path_requested = True
+                        is_directory_request = name in {"list_files", "search_files"}
+                        requested_root = requested_path if is_directory_request else requested_path.parent
+                        permission_roots = (
+                            approved_edit_roots if name == "edit_file" else approved_read_roots
+                        )
+                        if not any(
+                            _path_within(requested_root, approved)
+                            for approved in permission_roots
+                        ):
+                            access = "edit" if name == "edit_file" else "read"
+                            if confirm_external_access(str(requested_root), access):
+                                permission_roots.add(requested_root)
+                                if access == "edit":
+                                    approved_read_roots.add(requested_root)
+                            else:
+                                external_access_denied = True
+                        tool_approved_roots = (
+                            tuple(approved_edit_roots)
+                            if name == "edit_file"
+                            else tuple(approved_read_roots)
+                        )
+                if external_access_denied:
+                    result = {"error": "External directory access was not approved"}
+                elif preflight_error:
                     result = {"error": f"tool turn rejected: {preflight_error}"}
                 elif name == "switch_mode":
                     requested = str(args.get("mode", "")).lower()
@@ -232,7 +292,9 @@ def run_turn(
                     compaction_requested = True
                 elif name == "edit_file":
                     preview_args = dict(args, apply=False)
-                    result = interruptible_call(execute_tool, name, preview_args)
+                    result = interruptible_call(
+                        execute_tool, name, preview_args, approved_roots=tool_approved_roots
+                    )
                     if not result.get("error") and result.get("action") != "old_str not found":
                         if config.dry_run():
                             result["action"] = "dry_run"
@@ -242,16 +304,18 @@ def run_turn(
                                 in_git_repo=in_git_repo,
                                 branch=branch,
                                 explicit_auto_accept=session_auto_approve,
-                            )
+                            ) and not external_path_requested
                             if auto_apply:
                                 result = interruptible_call(
-                                    execute_tool, name, dict(args, apply=True)
+                                    execute_tool, name, dict(args, apply=True),
+                                    approved_roots=tool_approved_roots,
                                 )
                             else:
                                 approved, feedback = confirm_edit(result)
                                 if approved:
                                     result = interruptible_call(
-                                        execute_tool, name, dict(args, apply=True)
+                                        execute_tool, name, dict(args, apply=True),
+                                        approved_roots=tool_approved_roots,
                                     )
                                 else:
                                     result["action"] = "edit_rejected"
@@ -259,7 +323,12 @@ def run_turn(
                                     if feedback:
                                         result["feedback"] = feedback
                 else:
-                    result = interruptible_call(execute_tool, name, args)
+                    if external_path_requested:
+                        result = interruptible_call(
+                            execute_tool, name, args, approved_roots=tool_approved_roots
+                        )
+                    else:
+                        result = interruptible_call(execute_tool, name, args)
 
             summary = (result.get("error") or result.get("action") or
                        result.get("path") or result.get("file_path") or "ok")

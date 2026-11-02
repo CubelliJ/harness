@@ -112,6 +112,28 @@ def confirm_mode(
     return answer is not None and answer.lower() in {"", "y", "yes"}
 
 
+def confirm_external_access(
+    directory: str,
+    access: str,
+    *,
+    pause_voice_session: PauseVoiceSession,
+    drain_pending_input: DrainPendingInput,
+) -> bool:
+    """Ask before granting session-only access to an external directory."""
+    pause_voice_session()
+    drain_pending_input()
+    label = "read" if access == "read" else "read and edit"
+    print(f"\n\033[33mExternal directory requested: {directory}\033[0m")
+    try:
+        answer = read_confirmation(
+            f"Allow {label} access to this directory for this session? [y/N] "
+        )
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+    return answer is not None and answer.lower() in {"y", "yes"}
+
+
 def confirm_edit(
     result: Dict[str, Any],
     *,
