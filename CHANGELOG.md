@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.42.0](https://github.com/CubelliJ/harness/compare/v0.41.1...v0.42.0) (2026-11-02)
+
+
+### Features
+
+* show targets in listing tool status ([4b9b04f](https://github.com/CubelliJ/harness/commit/4b9b04f1b5e8a1bfb9c2f0b25dd6d020faefc1f6))
+* show targets in listing tool status ([09c5f62](https://github.com/CubelliJ/harness/commit/09c5f6243c37f960309bf124861761b6bf2bad17))
+
 ## [0.41.1](https://github.com/CubelliJ/harness/compare/v0.41.0...v0.41.1) (2026-11-02)
 
 
