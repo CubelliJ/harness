@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.41.0](https://github.com/CubelliJ/harness/compare/v0.40.0...v0.41.0) (2026-11-02)
+
+
+### Features
+
+* discover skills from agent tool directories ([d0b2c4b](https://github.com/CubelliJ/harness/commit/d0b2c4ba6ac60910d02d46c3b80c93ff06d555f6))
+* discover skills from agent tool directories ([6df017c](https://github.com/CubelliJ/harness/commit/6df017c06a3ff58791c2375a2b61756f6f3c61dc))
+
 ## [0.40.0](https://github.com/CubelliJ/harness/compare/v0.39.0...v0.40.0) (2026-09-28)
 
 
